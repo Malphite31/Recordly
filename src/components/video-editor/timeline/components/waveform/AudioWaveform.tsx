@@ -48,11 +48,19 @@ function AudioWaveformComponent({
 		const canvas = canvasRef.current;
 		if (!canvas) return;
 		let rafId = 0;
+		let timeoutId = 0;
 
 		const draw = () => {
+			rafId = 0;
 			const now = performance.now();
-			if (now - lastDrawAtRef.current < 33) {
-				rafId = requestAnimationFrame(draw);
+			const elapsed = now - lastDrawAtRef.current;
+			if (elapsed < 33) {
+				// Throttle to ~30fps: schedule next draw after remaining time instead of
+				// immediately re-queuing a RAF (which would spin at 60fps doing nothing).
+				timeoutId = window.setTimeout(() => {
+					timeoutId = 0;
+					rafId = requestAnimationFrame(draw);
+				}, 33 - elapsed);
 				return;
 			}
 			lastDrawAtRef.current = now;
@@ -75,32 +83,36 @@ function AudioWaveformComponent({
 			const { peaks: peakData, durationMs } = peaks;
 			if (durationMs <= 0 || peakData.length === 0) return;
 
-			// Use raw values for smooth zooming/panning (no snapping)
-			const visibleStartMs = segmentStartMs ?? range.start;
-			const visibleEndMs = segmentEndMs ?? range.end;
-			const visibleDurationMs = visibleEndMs - visibleStartMs;
-			
-			if (visibleDurationMs <= 0) return;
+			// segmentStartMs/segmentEndMs are in audio-file time (0-based ms).
+			// When not provided (standalone waveform), fall back to the timeline visible
+			// range — but offset it to 0-based by subtracting range.start so the waveform
+			// still maps correctly into the audio file.
+			const audioStartMs = segmentStartMs ?? 0;
+			const audioEndMs = segmentEndMs ?? (range.end - range.start);
+			const audioDurationMs = audioEndMs - audioStartMs;
+
+			if (audioDurationMs <= 0) return;
 
 			const midY = height / 2;
 			ctx.beginPath();
-			
+
 			for (let px = 0; px < width; px++) {
-				const t = visibleStartMs + (px / width) * visibleDurationMs;
-				
-				// If the timeline time is beyond the actual audio duration, we draw nothing (flat line)
+				// t is the audio-file time for this pixel
+				const t = audioStartMs + (px / width) * audioDurationMs;
+
+				// Skip pixels that fall outside the actual audio file
 				if (t < 0 || t > durationMs) continue;
 
 				const exactIndex = (t / durationMs) * (peakData.length - 1);
 				const leftIndex = Math.floor(exactIndex);
 				const rightIndex = Math.min(peakData.length - 1, leftIndex + 1);
 				const mix = exactIndex - leftIndex;
-				
+
 				let amplitude = peakData[leftIndex] * (1 - mix) + peakData[rightIndex] * mix;
-				
+
 				if (normalize) amplitude = Math.sqrt(Math.max(0, amplitude));
 				amplitude = Math.max(0, Math.min(1, amplitude * gain));
-				
+
 				const barHeight = amplitude * midY * 0.85;
 
 				ctx.moveTo(px, midY - barHeight);
@@ -112,7 +124,10 @@ function AudioWaveformComponent({
 			ctx.stroke();
 		};
 		rafId = requestAnimationFrame(draw);
-		return () => cancelAnimationFrame(rafId);
+		return () => {
+			if (rafId) cancelAnimationFrame(rafId);
+			if (timeoutId) clearTimeout(timeoutId);
+		};
 	}, [gain, normalize, peaks, range.start, range.end, resizeKey, segmentStartMs, segmentEndMs]);
 
 	return (

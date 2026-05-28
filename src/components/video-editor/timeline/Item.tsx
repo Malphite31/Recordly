@@ -1,6 +1,7 @@
 import {
 	FilmSlate as Film,
 	Gauge,
+	Keyboard,
 	ChatCircle as MessageSquare,
 	MusicNotes as Music,
 	MouseLeftClickIcon as PhMouseLeftClick,
@@ -35,9 +36,10 @@ interface ItemProps {
 	waveformGain?: number;
 	waveformNormalize?: boolean;
 	muted?: boolean;
-	variant?: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio";
+	variant?: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio" | "keyboard";
 	isLoading?: boolean;
 	loadingLabel?: string;
+	keyboardKeys?: string[];
 }
 
 // Map zoom depth to multiplier labels
@@ -79,6 +81,7 @@ export default function Item({
 	variant = "zoom",
 	isLoading = false,
 	loadingLabel,
+	keyboardKeys,
 	children,
 }: ItemProps) {
 	const { setNodeRef, attributes, listeners, itemStyle, itemContentStyle } = useItem({
@@ -125,7 +128,8 @@ export default function Item({
 	const isClip = variant === "clip";
 	const isSpeed = variant === "speed";
 	const isAudio = variant === "audio";
-	const showAudioWaveform = isAudio && Boolean(waveformPeaks);
+	const isKeyboard = variant === "keyboard";
+	const showAudioWaveform = (isAudio || isClip) && Boolean(waveformPeaks);
 	const clipSpeedLabel = isClip ? formatClipSpeedLabel(speedValue ?? 1) : null;
 
 	const glassClass = isZoom
@@ -138,7 +142,9 @@ export default function Item({
 					? glassStyles.glassAmber
 					: isAudio
 						? glassStyles.glassDarkGreen
-						: glassStyles.glassYellow;
+						: isKeyboard
+							? glassStyles.glassAmber
+							: glassStyles.glassYellow;
 
 	const MIN_ITEM_PX = 6;
 	const handleSelect = () => {
@@ -208,7 +214,7 @@ export default function Item({
 						/>
 					)}
 					{/* Muted overlay for source audio track items */}
-					{isAudio && muted && (
+					{(isAudio || isClip) && muted && (
 						<div className="absolute inset-0 z-20 flex items-center justify-center gap-1 bg-red-900/40 pointer-events-none">
 							<SpeakerX className="w-3 h-3 text-red-300/90 shrink-0" />
 						</div>
@@ -255,6 +261,19 @@ export default function Item({
 									<span className="text-[11px] font-semibold tracking-tight truncate max-w-full">
 										{children}
 									</span>
+								</>
+							) : isKeyboard ? (
+								<>
+									<Keyboard className="w-3.5 h-3.5 shrink-0" />
+									{keyboardKeys && keyboardKeys.length > 0 ? (
+										<span className="text-[10px] font-bold tracking-tight truncate max-w-full">
+											{keyboardKeys.join(" + ")}
+										</span>
+									) : (
+										<span className="text-[11px] font-semibold tracking-tight whitespace-nowrap">
+											{children}
+										</span>
+									)}
 								</>
 							) : (
 								<>

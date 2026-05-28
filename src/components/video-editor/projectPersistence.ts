@@ -42,6 +42,7 @@ import {
 	DEFAULT_CURSOR_STYLE,
 	DEFAULT_CURSOR_SWAY,
 	DEFAULT_FIGURE_DATA,
+	DEFAULT_INPUT_OVERLAY_DATA,
 	DEFAULT_PADDING,
 	DEFAULT_PLAYBACK_SPEED,
 	DEFAULT_WEBCAM_CORNER_RADIUS,
@@ -62,6 +63,8 @@ import {
 	DEFAULT_ZOOM_OUT_EASING,
 	DEFAULT_ZOOM_SMOOTHNESS,
 	getDefaultCaptionFontFamily,
+	type InputOverlayData,
+	type InputOverlayMouseAction,
 	type Padding,
 	type SpeedRegion,
 	type TrimRegion,
@@ -154,6 +157,32 @@ function isFiniteNumber(value: unknown): value is number {
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
+}
+
+function normalizeInputOverlayMouseAction(value: unknown): InputOverlayMouseAction {
+	return value === "left-click" ||
+		value === "right-click" ||
+		value === "double-click" ||
+		value === "middle-click" ||
+		value === "scroll-up" ||
+		value === "scroll-down"
+		? value
+		: "none";
+}
+
+function normalizeInputOverlayData(value: unknown): InputOverlayData {
+	const raw = value && typeof value === "object" ? (value as Partial<InputOverlayData>) : {};
+	const keys = Array.isArray(raw.keys)
+		? raw.keys
+				.filter((key): key is string => typeof key === "string" && key.trim().length > 0)
+				.map((key) => key.trim())
+				.slice(0, 6)
+		: DEFAULT_INPUT_OVERLAY_DATA.keys;
+
+	return {
+		keys,
+		mouseAction: normalizeInputOverlayMouseAction(raw.mouseAction),
+	};
 }
 
 type PersistedDevMotionBlurSettings = {
@@ -645,6 +674,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 							: 20,
 						blurColor:
 							typeof region.blurColor === "string" ? region.blurColor : undefined,
+						inputData: normalizeInputOverlayData(region.inputData),
 						trackIndex: isFiniteNumber(region.trackIndex)
 							? Math.max(0, Math.floor(region.trackIndex))
 							: 0,
@@ -994,7 +1024,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 						? legacyZoomScaleEffect > 0
 						: DEFAULT_WEBCAM_REACT_TO_ZOOM,
 			cornerRadius: isFiniteNumber(webcam.cornerRadius)
-				? clamp(webcam.cornerRadius, 0, 160)
+				? clamp(webcam.cornerRadius, 0, 540)
 				: DEFAULT_WEBCAM_CORNER_RADIUS,
 			shadow: isFiniteNumber(webcam.shadow)
 				? clamp(webcam.shadow, 0, 1)
@@ -1005,6 +1035,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			margin: isFiniteNumber(webcam.margin)
 				? clamp(webcam.margin, 0, 96)
 				: DEFAULT_WEBCAM_MARGIN,
+			morphFrames: [],
 		},
 		sourceAudioTrackSettingsByClip:
 			editor.sourceAudioTrackSettingsByClip &&

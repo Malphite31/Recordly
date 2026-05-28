@@ -73,6 +73,10 @@ ignoreBrokenConsolePipe(process.stderr);
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
 app.commandLine.appendSwitch("enable-gpu-rasterization");
+// Allow HTMLAudioElement / AudioContext to start without a prior user gesture.
+// Without this, Chromium can suspend the AudioContext that the editor's preview
+// pipeline uses for sidecar audio playback, leaving previews silent.
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 function configureGpuAccelerationSwitches() {
 	const { useAngle, useGl, disableFeatures } = getGpuSwitches(process.platform, process.env);

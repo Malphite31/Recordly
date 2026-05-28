@@ -48,6 +48,9 @@ import {
 	type ZoomRegion,
 	type ZoomTransitionEasing,
 } from "./types";
+import { renderKeyboardOverlay } from "@/lib/exporter/keyboardHUDRenderer";
+import { renderWatermark } from "@/lib/exporter/watermarkRenderer";
+import type { KeyboardOverlaySettings, WatermarkSettings } from "./types";
 import { DEFAULT_FOCUS } from "./videoPlayback/constants";
 import {
 	DEFAULT_CURSOR_CONFIG,
@@ -370,7 +373,99 @@ interface VideoPlaybackProps {
 	cursorClickBounceDuration?: number;
 	cursorSway?: number;
 	volume?: number;
+	keyboardOverlay?: KeyboardOverlaySettings | null;
+	watermark?: WatermarkSettings | null;
 	suspendRendering?: boolean;
+}
+
+/** Renders the keyboard overlay HUD on a canvas that fills the preview container. */
+function KeyboardOverlayCanvas({
+	settings,
+	currentTimeMs,
+}: {
+	settings: KeyboardOverlaySettings;
+	currentTimeMs: number;
+}) {
+	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [size, setSize] = useState({ width: 0, height: 0 });
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+		const observer = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				setSize({
+					width: Math.round(entry.contentRect.width),
+					height: Math.round(entry.contentRect.height),
+				});
+			}
+		});
+		observer.observe(container);
+		return () => observer.disconnect();
+	}, []);
+
+	useEffect(() => {
+		const canvas = canvasRef.current;
+		if (!canvas || size.width === 0 || size.height === 0) return;
+		canvas.width = size.width;
+		canvas.height = size.height;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		renderKeyboardOverlay(ctx, settings, currentTimeMs, canvas.width, canvas.height);
+	}, [settings, currentTimeMs, size]);
+
+	return (
+		<div ref={containerRef} className="pointer-events-none absolute inset-0 z-20">
+			<canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+		</div>
+	);
+}
+
+/** Renders the watermark on a canvas that fills the preview container. */
+function WatermarkCanvas({
+	settings,
+	currentTimeMs,
+}: {
+	settings: WatermarkSettings;
+	currentTimeMs: number;
+}) {
+	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [size, setSize] = useState({ width: 0, height: 0 });
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+		const observer = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				setSize({
+					width: Math.round(entry.contentRect.width),
+					height: Math.round(entry.contentRect.height),
+				});
+			}
+		});
+		observer.observe(container);
+		return () => observer.disconnect();
+	}, []);
+
+	useEffect(() => {
+		const canvas = canvasRef.current;
+		if (!canvas || size.width === 0 || size.height === 0) return;
+		canvas.width = size.width;
+		canvas.height = size.height;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		void renderWatermark(ctx, settings, currentTimeMs, canvas.width, canvas.height);
+	}, [settings, currentTimeMs, size]);
+
+	return (
+		<div ref={containerRef} className="pointer-events-none absolute inset-0 z-20">
+			<canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+		</div>
+	);
 }
 
 export interface VideoPlaybackRef {
@@ -448,6 +543,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cursorClickBounceDuration = DEFAULT_CURSOR_CLICK_BOUNCE_DURATION,
 			cursorSway = DEFAULT_CURSOR_SWAY,
 			volume = 1,
+			keyboardOverlay = null,
+			watermark = null,
 			suspendRendering = false,
 		},
 		ref,
@@ -2964,6 +3061,20 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 							));
 						})()}
 					</div>
+				)}
+				{/* Keyboard overlay HUD — rendered on top of everything */}
+				{keyboardOverlay?.enabled && (
+					<KeyboardOverlayCanvas
+						settings={keyboardOverlay}
+						currentTimeMs={Math.round(currentTime * 1000)}
+					/>
+				)}
+				{/* Watermark — rendered last */}
+				{watermark?.enabled && (
+					<WatermarkCanvas
+						settings={watermark}
+						currentTimeMs={Math.round(currentTime * 1000)}
+					/>
 				)}
 				{/* Keep the source video off-screen instead of display:none so the
 					browser continues producing presented frames for Pixi and preview sync. */}

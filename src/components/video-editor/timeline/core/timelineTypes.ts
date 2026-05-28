@@ -25,6 +25,7 @@ export interface TimelineShortcutBindings {
 	splitClip: ShortcutBinding;
 	addAnnotation: ShortcutBinding;
 	deleteSelected: ShortcutBinding;
+	rippleDelete: ShortcutBinding;
 }
 
 export interface TimelineRenderItem {
@@ -41,7 +42,9 @@ export interface TimelineRenderItem {
 	speedValue?: number;
 	showSourceAudio?: boolean;
 	muted?: boolean;
-	variant: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio";
+	variant: "zoom" | "trim" | "clip" | "annotation" | "speed" | "audio" | "keyboard";
+	/** For keyboard variant: the key labels to display in the timeline item */
+	keyboardKeys?: string[];
 }
 
 export interface AudioPeaksData {

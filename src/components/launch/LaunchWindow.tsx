@@ -71,6 +71,7 @@ function LaunchWindowContent() {
 		setMicrophoneDeviceId,
 		systemAudioEnabled,
 		setSystemAudioEnabled,
+		systemAudioStatus,
 		webcamEnabled,
 		setWebcamEnabled,
 		webcamDeviceId,
@@ -256,6 +257,7 @@ function LaunchWindowContent() {
 			<MicPopover
 				disabled={recording}
 				systemAudioEnabled={systemAudioEnabled}
+				systemAudioStatus={systemAudioStatus}
 				onToggleSystemAudio={() => setSystemAudioEnabled(!systemAudioEnabled)}
 				microphoneEnabled={microphoneEnabled}
 				onDisableMicrophone={() => setMicrophoneEnabled(false)}

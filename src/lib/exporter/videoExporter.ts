@@ -18,6 +18,7 @@ import type {
 } from "@/components/video-editor/types";
 import { getEffectiveVideoStreamDurationSeconds } from "@/lib/mediaTiming";
 import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
+import { getDefaultLightningRenderBackend } from "./backendPolicy";
 import { buildEditedTrackSourceSegments, classifyEditedTrackStrategy } from "./editedTrackStrategy";
 import {
 	advanceFinalizationProgress,
@@ -41,6 +42,12 @@ import type {
 
 const DEFAULT_MAX_ENCODE_QUEUE = 240;
 const PROGRESS_SAMPLE_WINDOW_MS = 1_000;
+const DEFAULT_EXPORT_VIDEO_COLOR_SPACE: VideoColorSpaceInit = {
+	primaries: "bt709",
+	transfer: "bt709",
+	matrix: "bt709",
+	fullRange: false,
+};
 
 interface VideoExporterConfig extends ExportConfig {
 	videoUrl: string;
@@ -216,7 +223,8 @@ export class VideoExporter {
 			this.renderer = new FrameRenderer({
 				width: this.config.width,
 				height: this.config.height,
-				preferredRenderBackend: undefined,
+				preferredRenderBackend:
+					this.config.preferredRenderBackend ?? getDefaultLightningRenderBackend(),
 				wallpaper: this.config.wallpaper,
 				zoomRegions: this.config.zoomRegions,
 				showShadow: this.config.showShadow,
@@ -825,12 +833,7 @@ export class VideoExporter {
 		const frame = new VideoFrame(canvas, {
 			timestamp,
 			duration: frameDuration,
-			colorSpace: {
-				primaries: "bt709",
-				transfer: "iec61966-2-1",
-				matrix: "rgb",
-				fullRange: true,
-			},
+			colorSpace: DEFAULT_EXPORT_VIDEO_COLOR_SPACE,
 		});
 		this.nativeH264Encoder.encode(frame, { keyFrame: frameIndex % 300 === 0 });
 		frame.close();
@@ -1077,12 +1080,7 @@ export class VideoExporter {
 		const exportFrame = new VideoFrame(canvas, {
 			timestamp,
 			duration: frameDuration,
-			colorSpace: {
-				primaries: "bt709",
-				transfer: "iec61966-2-1",
-				matrix: "rgb",
-				fullRange: true,
-			},
+			colorSpace: DEFAULT_EXPORT_VIDEO_COLOR_SPACE,
 		});
 
 		while (
@@ -1270,12 +1268,7 @@ export class VideoExporter {
 					try {
 						if (isFirstChunk && this.videoDescription) {
 							// Add decoder config for the first chunk
-							const colorSpace = this.videoColorSpace || {
-								primaries: "bt709",
-								transfer: "iec61966-2-1",
-								matrix: "rgb",
-								fullRange: true,
-							};
+							const colorSpace = this.videoColorSpace || DEFAULT_EXPORT_VIDEO_COLOR_SPACE;
 
 							const metadata: EncodedVideoChunkMetadata = {
 								decoderConfig: {

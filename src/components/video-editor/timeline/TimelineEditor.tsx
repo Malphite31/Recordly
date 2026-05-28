@@ -20,6 +20,7 @@ import type {
 	AudioRegion,
 	ClipRegion,
 	CursorTelemetryPoint,
+	KeyboardOverlayEvent,
 	SpeedRegion,
 	TrimRegion,
 	ZoomFocus,
@@ -81,6 +82,7 @@ export interface TimelineEditorProps {
 		clipId: string | null,
 	) => SourceAudioTrackSettings;
 	onSourceAudioTracksMetaChange?: (tracks: SourceAudioTrackMeta) => void;
+	keyboardEvents?: KeyboardOverlayEvent[];
 }
 
 function extractLocalPathFromMediaServerUrl(input: string | null | undefined): string | null {
@@ -166,6 +168,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			sourceAudioTrackSettings = {},
 			getSourceAudioTrackSettingsForClip,
 			onSourceAudioTracksMetaChange,
+			keyboardEvents = [],
 		},
 		ref,
 	) {
@@ -369,6 +372,7 @@ const TimelineEditor = forwardRef<TimelineEditorHandle, TimelineEditorProps>(
 			onAudioDelete,
 			selectedAudioId,
 			onSelectAudio,
+			keyboardEvents,
 			isMac,
 			keyShortcuts,
 			isTimelineFocusedRef,

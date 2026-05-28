@@ -27,6 +27,7 @@ interface UseTimelineKeyboardShortcutsParams {
 	deleteSelectedClip: () => void;
 	deleteSelectedAnnotation: () => void;
 	deleteSelectedAudio: () => void;
+	rippleDeleteSelectedClip: () => void;
 	cycleAnnotationsAtCurrentTime: (backward?: boolean) => boolean;
 }
 
@@ -54,6 +55,7 @@ export function useTimelineKeyboardShortcuts({
 	deleteSelectedClip,
 	deleteSelectedAnnotation,
 	deleteSelectedAudio,
+	rippleDeleteSelectedClip,
 	cycleAnnotationsAtCurrentTime,
 }: UseTimelineKeyboardShortcutsParams) {
 	useEffect(() => {
@@ -125,6 +127,12 @@ export function useTimelineKeyboardShortcuts({
 					deleteSelectedAudio();
 				}
 			}
+
+			// Ripple delete: remove selected clip and shift everything after it left
+			if (matchesShortcut(e, keyShortcuts.rippleDelete, isMac) && selectedClipId) {
+				e.preventDefault();
+				rippleDeleteSelectedClip();
+			}
 		};
 
 		window.addEventListener("keydown", handleKeyDown);
@@ -146,6 +154,7 @@ export function useTimelineKeyboardShortcuts({
 		isMac,
 		isTimelineFocusedRef,
 		keyShortcuts,
+		rippleDeleteSelectedClip,
 		selectAllBlocksActive,
 		selectedAnnotationId,
 		selectedAudioId,

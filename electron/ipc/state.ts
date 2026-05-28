@@ -88,6 +88,22 @@ export let linuxCursorScreenPoint: { x: number; y: number; updatedAt: number } |
 export let selectedWindowBounds: WindowBounds | null = null;
 export let windowBoundsCaptureInterval: NodeJS.Timeout | null = null;
 
+// ── Keyboard telemetry ────────────────────────────────────────────────────────
+export interface RawKeyEvent {
+	/** Elapsed recording time in ms */
+	timeMs: number;
+	/** uiohook-napi keycode */
+	keycode: number;
+	type: "keydown" | "keyup";
+	altKey: boolean;
+	ctrlKey: boolean;
+	metaKey: boolean;
+	shiftKey: boolean;
+}
+
+export let activeKeyboardEvents: RawKeyEvent[] = [];
+export let keyboardCaptureCleanup: (() => void) | null = null;
+
 // ── Native macOS window source cache ─────────────────────────────────────────
 export let cachedNativeMacWindowSources: import("./types").NativeMacWindowSource[] | null = null;
 export let cachedNativeMacWindowSourcesAtMs = 0;
@@ -290,4 +306,11 @@ export function setCachedNativeVideoEncoder(
 
 export function setNativeHelperMigrationPromise(v: Promise<void> | null) {
 	nativeHelperMigrationPromise = v;
+}
+
+export function setActiveKeyboardEvents(v: RawKeyEvent[]) {
+	activeKeyboardEvents = v;
+}
+export function setKeyboardCaptureCleanup(v: (() => void) | null) {
+	keyboardCaptureCleanup = v;
 }

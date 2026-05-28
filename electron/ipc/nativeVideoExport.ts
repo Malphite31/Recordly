@@ -132,10 +132,10 @@ function getLibx264ModeArgs(encodingMode: NativeExportEncodingMode): string[] {
 		case "fast":
 			return ["-preset", "ultrafast", "-tune", "zerolatency"];
 		case "quality":
-			return ["-preset", "slow"];
+			return ["-preset", "slow", "-profile:v", "high", "-tune", "film"];
 		case "balanced":
 		default:
-			return ["-preset", "medium"];
+			return ["-preset", "medium", "-profile:v", "high"];
 	}
 }
 
@@ -154,25 +154,104 @@ function getBitrateArgs(bitrate: number): string[] {
 	];
 }
 
+/**
+ * BT.709 color tagging applied uniformly to every encoded MP4. Without these
+ * flags FFmpeg's RGB→YUV conversion picks an implementation-defined matrix
+ * (often BT.601), and the bitstream itself carries no `colr` box, so players
+ * fall back to BT.601 and the result looks washed-out / desaturated compared
+ * to the editor preview.
+ */
+const BT709_COLOR_TAG_ARGS: readonly string[] = [
+	"-colorspace",
+	"bt709",
+	"-color_primaries",
+	"bt709",
+	"-color_trc",
+	"bt709",
+	"-color_range",
+	"tv",
+];
+
+/**
+ * FFmpeg video filter that converts RGB input frames to YUV using the BT.709
+ * matrix. Using `scale` with explicit `in_color_matrix` / `out_color_matrix`
+ * is the safest way to force the conversion when the input is `rawvideo` RGB
+ * (which has no colorspace metadata).
+ */
+const BT709_RGB_TO_YUV_FILTER =
+	"scale=in_range=full:out_range=tv:in_color_matrix=bt709:out_color_matrix=bt709";
+
 function getNvencStaticLayoutModeArgs(encodingMode: NativeExportEncodingMode): string[] {
-	const lowLatencyRateControlArgs = [
-		"-rc",
-		"vbr",
-		"-multipass",
-		"disabled",
-		"-rc-lookahead",
-		"0",
-		"-surfaces",
-		"32",
-	];
 	switch (encodingMode) {
 		case "quality":
-			return ["-preset", "p1", "-tune", "hq", ...lowLatencyRateControlArgs];
+			// Slower preset + lookahead + spatial/temporal AQ produce noticeably
+			// crisper output for screen-recording content (text edges, cursor)
+			// at the same bitrate as p1+ll.
+			return [
+				"-preset",
+				"p5",
+				"-tune",
+				"hq",
+				"-rc",
+				"vbr",
+				"-multipass",
+				"qres",
+				"-rc-lookahead",
+				"32",
+				"-spatial-aq",
+				"1",
+				"-temporal-aq",
+				"1",
+				"-b_ref_mode",
+				"middle",
+				"-bf",
+				"3",
+				"-profile:v",
+				"high",
+				"-surfaces",
+				"32",
+			];
 		case "balanced":
-			return ["-preset", "p1", "-tune", "ll", ...lowLatencyRateControlArgs];
+			return [
+				"-preset",
+				"p4",
+				"-tune",
+				"hq",
+				"-rc",
+				"vbr",
+				"-multipass",
+				"qres",
+				"-rc-lookahead",
+				"16",
+				"-spatial-aq",
+				"1",
+				"-temporal-aq",
+				"1",
+				"-bf",
+				"2",
+				"-profile:v",
+				"high",
+				"-surfaces",
+				"32",
+			];
 		case "fast":
 		default:
-			return ["-preset", "p1", "-tune", "ull", ...lowLatencyRateControlArgs];
+			// Keep latency-optimized path for fast exports; quality budget is
+			// intentionally low here.
+			return [
+				"-preset",
+				"p1",
+				"-tune",
+				"ull",
+				"-rc",
+				"vbr",
+				"-multipass",
+				"disabled",
+				"-rc-lookahead",
+				"0",
+				"-surfaces",
+				"32",
+			];
 	}
 }
 
@@ -295,8 +374,11 @@ export function buildNativeVideoExportArgs(
 		String(options.frameRate),
 		"-i",
 		"pipe:0",
+		// Vertical flip (Pixi/WebGL output is bottom-up) + explicit BT.709
+		// RGB→YUV conversion. Without the matrix args here the encoder picks
+		// BT.601 by default, which is what was making exports look desaturated.
 		"-vf",
-		"vflip",
+		`vflip,${BT709_RGB_TO_YUV_FILTER}`,
 		"-an",
 		"-c:v",
 		encoder,
@@ -307,9 +389,23 @@ export function buildNativeVideoExportArgs(
 
 	if (encoder === "libx264") {
 		args.push(...getLibx264ModeArgs(options.encodingMode));
+	} else if (
+		encoder === "h264_nvenc" ||
+		encoder === "h264_qsv" ||
+		encoder === "h264_amf" ||
+		encoder === "h264_mf"
+	) {
+		args.push(...getNvencStaticLayoutModeArgs(options.encodingMode));
 	}
 
-	args.push("-pix_fmt", "yuv420p", "-movflags", "+faststart", outputPath);
+	args.push(
+		"-pix_fmt",
+		"yuv420p",
+		...BT709_COLOR_TAG_ARGS,
+		"-movflags",
+		"+faststart",
+		outputPath,
+	);
 	return args;
 }
 
@@ -338,6 +434,7 @@ export function buildNativeCudaOverlayStaticLayoutArgs(
 		"h264_nvenc",
 		...getNvencStaticLayoutModeArgs(config.encodingMode),
 		...getBitrateArgs(config.bitrate),
+		...BT709_COLOR_TAG_ARGS,
 		"-movflags",
 		"+faststart",
 		config.outputPath,
@@ -371,6 +468,7 @@ export function buildNativeCudaScaleCpuPadStaticLayoutArgs(
 		...getBitrateArgs(config.bitrate),
 		"-pix_fmt",
 		"yuv420p",
+		...BT709_COLOR_TAG_ARGS,
 		"-movflags",
 		"+faststart",
 		config.outputPath,
@@ -533,6 +631,7 @@ export function buildNativePrecompositedStaticLayoutArgs(
 		...getBitrateArgs(config.bitrate),
 		"-pix_fmt",
 		"yuv420p",
+		...BT709_COLOR_TAG_ARGS,
 		"-movflags",
 		"+faststart",
 		config.outputPath,
@@ -719,6 +818,10 @@ export function buildNativeH264StreamExportArgs(config: {
 		"-an", // audio handled separately by muxNativeVideoExportAudio
 		"-c:v",
 		"copy",
+		// The browser VideoEncoder is configured for BT.709 (see
+		// modernVideoExporter.DEFAULT_EXPORT_VIDEO_COLOR_SPACE). Stamp the same
+		// metadata on the muxed track so players don't fall back to BT.601.
+		...BT709_COLOR_TAG_ARGS,
 		"-movflags",
 		"+faststart",
 		config.outputPath,

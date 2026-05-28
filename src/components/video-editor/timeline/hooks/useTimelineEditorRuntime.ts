@@ -13,6 +13,7 @@ import type {
 	AudioRegion,
 	ClipRegion,
 	CursorTelemetryPoint,
+	KeyboardOverlayEvent,
 	SpeedRegion,
 	TrimRegion,
 	ZoomFocus,
@@ -59,6 +60,7 @@ interface UseTimelineEditorRuntimeParams {
 	onAudioDelete?: (id: string) => void;
 	selectedAudioId?: string | null;
 	onSelectAudio?: (id: string | null) => void;
+	keyboardEvents?: KeyboardOverlayEvent[];
 	isMac: boolean;
 	keyShortcuts: TimelineShortcutBindings;
 	isTimelineFocusedRef: RefObject<boolean>;
@@ -103,6 +105,7 @@ export function useTimelineEditorRuntime({
 	onAudioDelete,
 	selectedAudioId,
 	onSelectAudio,
+	keyboardEvents = [],
 	isMac,
 	keyShortcuts,
 	isTimelineFocusedRef,
@@ -170,6 +173,7 @@ export function useTimelineEditorRuntime({
 			annotationRegions,
 			speedRegions,
 			audioRegions,
+			keyboardEvents,
 			onZoomSpanChange,
 			onTrimSpanChange,
 			onClipSpanChange,
@@ -222,6 +226,34 @@ export function useTimelineEditorRuntime({
 		[videoDuration, totalMs, currentTimeMs, defaultRegionDurationMs, onAnnotationAdded],
 	);
 
+	const handleRippleDeleteClip = useCallback(() => {
+		if (!selectedClipId || !onClipDelete || !onSelectClip) return;
+		// Find the clip to delete and its duration
+		const clipToDelete = clipRegions.find((c) => c.id === selectedClipId);
+		if (!clipToDelete) return;
+		const deletedDuration = clipToDelete.endMs - clipToDelete.startMs;
+		// Remove the clip and shift all subsequent clips left by the deleted duration
+		const updatedClips = clipRegions
+			.filter((c) => c.id !== selectedClipId)
+			.map((c) => {
+				if (c.startMs >= clipToDelete.endMs) {
+					return { ...c, startMs: c.startMs - deletedDuration, endMs: c.endMs - deletedDuration };
+				}
+				return c;
+			});
+		// Apply via onClipDelete then span changes — but we need a direct approach
+		// Use onClipDelete for the selected clip, then shift others via onClipSpanChange
+		onClipDelete(selectedClipId);
+		onSelectClip(null);
+		// Shift subsequent clips
+		for (const c of updatedClips) {
+			const original = clipRegions.find((orig) => orig.id === c.id);
+			if (original && (original.startMs !== c.startMs || original.endMs !== c.endMs)) {
+				onClipSpanChange?.(c.id, { start: c.startMs, end: c.endMs });
+			}
+		}
+	}, [selectedClipId, clipRegions, onClipDelete, onSelectClip, onClipSpanChange]);
+
 	useTimelineKeyboardShortcuts({
 		isMac,
 		keyShortcuts,
@@ -246,6 +278,7 @@ export function useTimelineEditorRuntime({
 		deleteSelectedClip,
 		deleteSelectedAnnotation,
 		deleteSelectedAudio,
+		rippleDeleteSelectedClip: handleRippleDeleteClip,
 		cycleAnnotationsAtCurrentTime,
 	});
 

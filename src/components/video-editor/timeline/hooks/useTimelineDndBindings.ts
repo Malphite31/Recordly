@@ -4,6 +4,7 @@ import type {
 	AnnotationRegion,
 	AudioRegion,
 	ClipRegion,
+	KeyboardOverlayEvent,
 	SpeedRegion,
 	TrimRegion,
 	ZoomRegion,
@@ -20,6 +21,7 @@ interface UseTimelineDndBindingsParams {
 	annotationRegions: AnnotationRegion[];
 	speedRegions: SpeedRegion[];
 	audioRegions: AudioRegion[];
+	keyboardEvents?: KeyboardOverlayEvent[];
 	onZoomSpanChange: (id: string, span: Span) => void;
 	onTrimSpanChange?: (id: string, span: Span) => void;
 	onClipSpanChange?: (id: string, span: Span) => void;
@@ -37,6 +39,7 @@ export function useTimelineDndBindings({
 	annotationRegions,
 	speedRegions,
 	audioRegions,
+	keyboardEvents = [],
 	onZoomSpanChange,
 	onTrimSpanChange,
 	onClipSpanChange,
@@ -118,8 +121,9 @@ export function useTimelineDndBindings({
 				clipRegions,
 				annotationRegions,
 				audioRegions,
+				keyboardEvents,
 			}),
-		[zoomRegions, clipRegions, annotationRegions, audioRegions],
+		[zoomRegions, clipRegions, annotationRegions, audioRegions, keyboardEvents],
 	);
 
 	const allRegionSpans = useMemo(

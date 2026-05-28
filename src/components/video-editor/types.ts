@@ -58,6 +58,8 @@ export type EditorEffectSection =
 	| "cursor"
 	| "captions"
 	| "webcam"
+	| "keyboard"
+	| "watermark"
 	| "settings"
 	| "zoom"
 	| "frame"
@@ -94,6 +96,18 @@ export interface WebcamOverlaySettings {
 	cornerRadius: number;
 	shadow: number;
 	margin: number;
+	morphFrames?: WebcamMorphFrame[];
+}
+
+export interface WebcamMorphFrame {
+	id: string;
+	timeMs: number;
+	positionX: number;
+	positionY: number;
+	size: number;
+	cornerRadius: number;
+	margin: number;
+	shadow: number;
 }
 
 export const DEFAULT_CURSOR_SIZE = 3.0;
@@ -156,6 +170,7 @@ export const DEFAULT_WEBCAM_OVERLAY: WebcamOverlaySettings = {
 	cornerRadius: DEFAULT_WEBCAM_CORNER_RADIUS,
 	shadow: DEFAULT_WEBCAM_SHADOW,
 	margin: DEFAULT_WEBCAM_MARGIN,
+	morphFrames: [],
 };
 
 export interface TrimRegion {
@@ -361,6 +376,20 @@ export interface FigureData {
 	strokeWidth: number;
 }
 
+export type InputOverlayMouseAction =
+	| "none"
+	| "left-click"
+	| "right-click"
+	| "double-click"
+	| "middle-click"
+	| "scroll-up"
+	| "scroll-down";
+
+export interface InputOverlayData {
+	keys: string[];
+	mouseAction: InputOverlayMouseAction;
+}
+
 export interface AnnotationPosition {
 	x: number;
 	y: number;
@@ -407,6 +436,7 @@ export interface AnnotationRegion {
 	figureData?: FigureData;
 	blurIntensity?: number;
 	blurColor?: string;
+	inputData?: InputOverlayData;
 }
 
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {
@@ -435,6 +465,11 @@ export const DEFAULT_FIGURE_DATA: FigureData = {
 	arrowDirection: "right",
 	color: "#2563EB",
 	strokeWidth: 4,
+};
+
+export const DEFAULT_INPUT_OVERLAY_DATA: InputOverlayData = {
+	keys: ["Ctrl", "K"],
+	mouseAction: "none",
 };
 
 export interface CropRegion {
@@ -466,7 +501,10 @@ export const DEFAULT_PADDING: Padding = {
 	right: 20,
 	linked: true,
 };
-export type { SourceAudioTrackSetting, SourceAudioTrackSettings } from "@/components/video-editor/audio/audioTypes";
+export type {
+	SourceAudioTrackSetting,
+	SourceAudioTrackSettings,
+} from "@/components/video-editor/audio/audioTypes";
 
 export interface AudioRegion {
 	id: string;
@@ -569,3 +607,137 @@ function clamp(value: number, min: number, max: number) {
 	if (Number.isNaN(value)) return (min + max) / 2;
 	return Math.min(max, Math.max(min, value));
 }
+
+// ─── Keyboard Overlay ────────────────────────────────────────────────────────
+
+export type KeyboardOverlayPosition =
+	| "top-left"
+	| "top-center"
+	| "top-right"
+	| "center-left"
+	| "center"
+	| "center-right"
+	| "bottom-left"
+	| "bottom-center"
+	| "bottom-right"
+	| "custom";
+
+/** Custom position (0–1 normalized, used when position = "custom") */
+
+export type KeyboardOverlayAnimationStyle = "fade" | "slide-up" | "pop" | "none";
+
+export type KeyboardOverlayModifierStyle = "symbol" | "text" | "mixed";
+
+/** A single keyboard event captured during recording. */
+export interface KeyboardOverlayEvent {
+	/** Timeline time in ms when the key combo appeared. */
+	timeMs: number;
+	/** How long to display this combo (ms). */
+	durationMs: number;
+	/** Normalized key labels, e.g. ["Ctrl", "K"] */
+	keys: string[];
+}
+
+export interface KeyboardOverlaySettings {
+	enabled: boolean;
+	position: KeyboardOverlayPosition;
+	/** Custom X position (0–1), used when position = "custom" */
+	positionX: number;
+	/** Custom Y position (0–1), used when position = "custom" */
+	positionY: number;
+	/** Scale multiplier (0.5 – 2.0) */
+	scale: number;
+	/** Overall opacity (0 – 1) */
+	opacity: number;
+	animationStyle: KeyboardOverlayAnimationStyle;
+	/** Fade-in / fade-out duration in ms */
+	fadeDurationMs: number;
+	/** Whether to use glassmorphism backdrop */
+	glassmorphism: boolean;
+	modifierStyle: KeyboardOverlayModifierStyle;
+	/** Stack multiple active combos vertically */
+	stackedDisplay: boolean;
+	/** Maximum number of combos visible at once */
+	maxVisible: number;
+	/** Recorded keyboard events (populated during recording / import) */
+	events: KeyboardOverlayEvent[];
+}
+
+export const DEFAULT_KEYBOARD_OVERLAY_SETTINGS: KeyboardOverlaySettings = {
+	enabled: false,
+	position: "bottom-center",
+	positionX: 0.5,
+	positionY: 1.0,
+	scale: 1.0,
+	opacity: 1.0,
+	animationStyle: "fade",
+	fadeDurationMs: 180,
+	glassmorphism: true,
+	modifierStyle: "mixed",
+	stackedDisplay: true,
+	maxVisible: 3,
+	events: [],
+};
+
+// ─── Watermark ────────────────────────────────────────────────────────────────
+
+export type WatermarkType = "text" | "image";
+
+export type WatermarkPosition =
+	| "top-left"
+	| "top-center"
+	| "top-right"
+	| "center-left"
+	| "center"
+	| "center-right"
+	| "bottom-left"
+	| "bottom-center"
+	| "bottom-right"
+	| "custom";
+
+export type WatermarkAnimationStyle = "none" | "pulse" | "fade-in-out";
+
+export interface WatermarkSettings {
+	enabled: boolean;
+	type: WatermarkType;
+	/** Text content (used when type = "text") */
+	text: string;
+	/** Image data URL (used when type = "image") */
+	imageDataUrl: string | null;
+	position: WatermarkPosition;
+	/** Custom X position (0–1) */
+	positionX: number;
+	/** Custom Y position (0–1) */
+	positionY: number;
+	/** Scale multiplier (0.1 – 3.0) */
+	scale: number;
+	/** Opacity (0 – 1) */
+	opacity: number;
+	/** Font size in px (for text watermarks) */
+	fontSize: number;
+	/** Text color */
+	color: string;
+	/** Font family */
+	fontFamily: string;
+	/** Animation style */
+	animationStyle: WatermarkAnimationStyle;
+	/** Padding from edge in px (at 1920 base width) */
+	padding: number;
+}
+
+export const DEFAULT_WATERMARK_SETTINGS: WatermarkSettings = {
+	enabled: false,
+	type: "text",
+	text: "© My Brand",
+	imageDataUrl: null,
+	position: "bottom-right",
+	positionX: 1,
+	positionY: 1,
+	scale: 1.0,
+	opacity: 0.6,
+	fontSize: 28,
+	color: "#FFFFFF",
+	fontFamily: '"SF Pro Display", "SF Pro Text", Helvetica, sans-serif',
+	animationStyle: "none",
+	padding: 32,
+};

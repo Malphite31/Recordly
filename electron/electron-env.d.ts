@@ -242,6 +242,7 @@ interface Window {
 			error?: string;
 			userNotified?: boolean;
 			microphoneFallbackRequired?: boolean;
+			systemAudioUnavailable?: boolean;
 		}>;
 		stopNativeScreenRecording: () => Promise<{
 			success: boolean;
@@ -555,6 +556,11 @@ interface Window {
 			success: boolean;
 			paths: string[];
 			startDelayMsByPath?: Record<string, number>;
+			error?: string;
+		}>;
+		getKeyboardTelemetry: (videoPath?: string) => Promise<{
+			success: boolean;
+			events: import("../electron/ipc/state").RawKeyEvent[];
 			error?: string;
 		}>;
 		setRecordingState: (recording: boolean) => Promise<void>;

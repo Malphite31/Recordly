@@ -85,6 +85,8 @@ import {
 	renderAnnotations,
 	renderAnnotationToCanvas,
 } from "./annotationRenderer";
+import { renderKeyboardOverlay } from "./keyboardHUDRenderer";
+import { renderWatermark } from "./watermarkRenderer";
 import { ForwardFrameSource } from "./forwardFrameSource";
 import { resolveMediaElementSource } from "./localMediaSource";
 import {
@@ -153,6 +155,8 @@ interface FrameRenderConfig {
 	zoomClassicMode?: boolean;
 	frame?: string | null;
 	nativeReadbackMode?: "pixels" | "canvas";
+	keyboardOverlay?: import("@/components/video-editor/types").KeyboardOverlaySettings | null;
+	watermark?: import("@/components/video-editor/types").WatermarkSettings | null;
 }
 
 interface AnimationState {
@@ -1572,6 +1576,23 @@ export class FrameRenderer {
 		);
 
 		this.drawCaptionOverlay(context);
+
+		// Keyboard overlay — rendered on top of everything
+		if (this.config.keyboardOverlay?.enabled) {
+			renderKeyboardOverlay(
+				context,
+				this.config.keyboardOverlay,
+				timeMs,
+				this.config.width,
+				this.config.height,
+			);
+		}
+
+		// Watermark — rendered last
+		if (this.config.watermark?.enabled) {
+			await renderWatermark(context, this.config.watermark, timeMs, this.config.width, this.config.height);
+		}
+
 		this.outputCanvasOverride = canvas;
 	}
 
@@ -2829,6 +2850,7 @@ export class FrameRenderer {
 	}
 
 	private updateWebcamOverlay(referenceTimeSeconds = this.currentVideoTime): void {
+		void referenceTimeSeconds;
 		const webcam = this.config.webcam;
 		if (!webcam?.enabled || !this.webcamRootContainer || !this.webcamMaskGraphics) {
 			if (this.webcamRootContainer) {
@@ -3386,6 +3408,22 @@ export class FrameRenderer {
 		executeExtensionRenderHooks("post-webcam", this.compositeCtx, hookParams);
 		executeExtensionRenderHooks("post-annotations", this.compositeCtx, hookParams);
 		executeExtensionRenderHooks("final", this.compositeCtx, hookParams);
+
+		// Keyboard overlay — rendered last, on top of everything
+		if (this.config.keyboardOverlay?.enabled) {
+			renderKeyboardOverlay(
+				this.compositeCtx,
+				this.config.keyboardOverlay,
+				timeMs,
+				this.config.width,
+				this.config.height,
+			);
+		}
+
+		// Watermark — rendered after keyboard overlay
+		if (this.config.watermark?.enabled) {
+			void renderWatermark(this.compositeCtx, this.config.watermark, timeMs, this.config.width, this.config.height);
+		}
 	}
 
 	private getCursorPosition(

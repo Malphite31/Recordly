@@ -50,6 +50,7 @@ import {
 } from "@/lib/wallpapers";
 import { AudioProcessor, isAacAudioEncodingSupported } from "./audioEncoder";
 import {
+	getDefaultLightningRenderBackend,
 	normalizeLightningRuntimePlatform,
 	shouldPreferNativeAutoBackend,
 	shouldPreferNativeStaticLayoutBeforeBreeze,
@@ -281,6 +282,12 @@ type NativeStaticLayoutZoomSample = {
 };
 
 const NATIVE_EXPORT_ENGINE_NAME = "Breeze";
+const DEFAULT_EXPORT_VIDEO_COLOR_SPACE: VideoColorSpaceInit = {
+	primaries: "bt709",
+	transfer: "bt709",
+	matrix: "bt709",
+	fullRange: false,
+};
 const READABLE_SOURCE_RETRY_ERROR_TOKENS = [
 	"readavpacket",
 	"get_media_info",
@@ -579,7 +586,8 @@ export class ModernVideoExporter {
 				this.renderer = new ModernFrameRenderer({
 					width: this.config.width,
 					height: this.config.height,
-					preferredRenderBackend: undefined,
+					preferredRenderBackend:
+						this.config.preferredRenderBackend ?? getDefaultLightningRenderBackend(),
 					wallpaper: this.config.wallpaper,
 					zoomRegions: this.config.zoomRegions,
 					showShadow: this.config.showShadow,
@@ -1543,7 +1551,6 @@ export class ModernVideoExporter {
 		if (this.config.webcam?.enabled && !this.getNativeWebcamSourcePath()) {
 			reasons.push("unsupported-webcam-source");
 		}
-
 		if (this.config.frame) {
 			reasons.push("unsupported-frame-overlay");
 		}
@@ -2973,12 +2980,7 @@ export class ModernVideoExporter {
 		const exportFrame = new VideoFrame(canvas, {
 			timestamp,
 			duration: frameDuration,
-			colorSpace: {
-				primaries: "bt709",
-				transfer: "iec61966-2-1",
-				matrix: "rgb",
-				fullRange: true,
-			},
+			colorSpace: DEFAULT_EXPORT_VIDEO_COLOR_SPACE,
 		});
 
 		while (
@@ -3393,12 +3395,7 @@ export class ModernVideoExporter {
 					try {
 						if (isFirstChunk && this.videoDescription) {
 							// Add decoder config for the first chunk
-							const colorSpace = this.videoColorSpace || {
-								primaries: "bt709",
-								transfer: "iec61966-2-1",
-								matrix: "rgb",
-								fullRange: true,
-							};
+							const colorSpace = this.videoColorSpace || DEFAULT_EXPORT_VIDEO_COLOR_SPACE;
 
 							const metadata: EncodedVideoChunkMetadata = {
 								decoderConfig: {

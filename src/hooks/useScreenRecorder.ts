@@ -162,6 +162,7 @@ type UseScreenRecorderReturn = {
 	setMicrophoneDeviceId: (deviceId: string | undefined) => void;
 	systemAudioEnabled: boolean;
 	setSystemAudioEnabled: (enabled: boolean) => void;
+	systemAudioStatus: "off" | "on" | "unavailable";
 	webcamEnabled: boolean;
 	setWebcamEnabled: (enabled: boolean) => void;
 	webcamDeviceId: string | undefined;
@@ -391,6 +392,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
 	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
 	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
+	const [systemAudioStatus, setSystemAudioStatus] = useState<"off" | "on" | "unavailable">(
+		"off",
+	);
 	const [webcamEnabled, setWebcamEnabled] = useState(false);
 	const [webcamDeviceId, setWebcamDeviceId] = useState<string | undefined>(undefined);
 	const [countdownDelay, setCountdownDelayState] = useState(3);
@@ -1336,6 +1340,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					setMicrophoneDeviceId(result.microphoneDeviceId);
 				}
 				setSystemAudioEnabled(result.systemAudioEnabled);
+				setSystemAudioStatus(result.systemAudioEnabled ? "on" : "off");
 			}
 		})();
 	}, []);
@@ -1352,6 +1357,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 	const persistSystemAudioEnabled = useCallback((enabled: boolean) => {
 		setSystemAudioEnabled(enabled);
+		setSystemAudioStatus(enabled ? "on" : "off");
 		void window.electronAPI.setRecordingPreferences({ systemAudioEnabled: enabled });
 	}, []);
 
@@ -1551,6 +1557,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 
 				if (nativeResult.success) {
+					if (systemAudioEnabled) {
+						const unavailable = nativeResult.systemAudioUnavailable === true;
+						setSystemAudioStatus(unavailable ? "unavailable" : "on");
+						if (unavailable) {
+							toast.warning(
+								"System audio is enabled, but Windows loopback is unavailable. Recording will continue without system audio.",
+							);
+						}
+					} else {
+						setSystemAudioStatus("off");
+					}
 					const mainStartedAt = Date.now();
 					micFallbackStartDelayMs.current = null;
 					beginWebcamCapture();
@@ -1726,6 +1743,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						alert(
 							"System audio is not available for this source. Recording will continue without system audio.",
 						);
+						setSystemAudioStatus("unavailable");
 						screenMediaStream = useLinuxPortal
 							? await acquireLinuxPortalStream(false)
 							: await mediaDevices.getUserMedia({
@@ -1799,6 +1817,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				} else if (micAudioTrack) {
 					stream.current.addTrack(micAudioTrack);
 				}
+				if (systemAudioEnabled && !systemAudioIncluded) {
+					setSystemAudioStatus("unavailable");
+					toast.warning(
+						"System audio is enabled, but this source did not provide a system audio track.",
+					);
+				} else if (systemAudioEnabled) {
+					setSystemAudioStatus("on");
+				} else {
+					setSystemAudioStatus("off");
+				}
 			} else {
 				const mediaStream = useLinuxPortal
 					? await mediaDevices.getDisplayMedia({
@@ -1822,6 +1850,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 				stream.current = mediaStream;
 				videoTrack = mediaStream.getVideoTracks()[0];
+				setSystemAudioStatus(systemAudioEnabled ? "unavailable" : "off");
 			}
 
 			if (!stream.current || !videoTrack) {
@@ -2195,6 +2224,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setMicrophoneDeviceId: persistMicrophoneDeviceId,
 		systemAudioEnabled,
 		setSystemAudioEnabled: persistSystemAudioEnabled,
+		systemAudioStatus,
 		webcamEnabled,
 		setWebcamEnabled,
 		webcamDeviceId,

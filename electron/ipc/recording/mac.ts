@@ -5,6 +5,7 @@ import {
 	persistPendingCursorTelemetry,
 	snapshotCursorTelemetryForPersistence,
 } from "../cursor/telemetry";
+import { persistKeyboardTelemetry } from "../cursor/keyboardCapture";
 import {
 	lastNativeCaptureDiagnostics,
 	nativeCaptureMicrophonePath,
@@ -228,6 +229,11 @@ export async function finalizeStoredVideo(videoPath: string) {
 		await persistPendingCursorTelemetry(videoPath);
 	} catch (error) {
 		console.warn("[mac-stop] Failed to persist cursor telemetry:", error);
+	}
+	try {
+		await persistKeyboardTelemetry(videoPath);
+	} catch (error) {
+		console.warn("[mac-stop] Failed to persist keyboard telemetry:", error);
 	}
 	if (isAutoRecordingPath(videoPath)) {
 		await pruneAutoRecordings([videoPath]);

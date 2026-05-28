@@ -3,7 +3,10 @@ import {
 	getWebcamCropSourceRect,
 	isWebcamCropRegionDefault,
 	normalizeWebcamCropRegion,
+	normalizeWebcamMorphFrames,
+	resolveWebcamOverlayAtTime,
 } from "./webcamOverlay";
+import { DEFAULT_WEBCAM_OVERLAY } from "./types";
 
 describe("normalizeWebcamCropRegion", () => {
 	it("defaults to the full webcam frame", () => {
@@ -30,5 +33,40 @@ describe("getWebcamCropSourceRect", () => {
 			sw: 960,
 			sh: 810,
 		});
+	});
+});
+
+describe("webcam morph frames", () => {
+	it("drops saved webcam morph frames", () => {
+		expect(
+			normalizeWebcamMorphFrames([
+				{ id: "late", timeMs: 2000, positionX: 2, positionY: -1, size: 150 },
+				{ id: "early", timeMs: 1000, positionX: 0.25, positionY: 0.75, size: 20 },
+			]),
+		).toEqual([]);
+	});
+
+	it("leaves webcam layout unchanged at timeline time", () => {
+		const webcam = {
+			...DEFAULT_WEBCAM_OVERLAY,
+			positionPreset: "custom" as const,
+			positionX: 0,
+			positionY: 0,
+			size: 20,
+			morphFrames: [
+				{
+					id: "target",
+					timeMs: 1000,
+					positionX: 1,
+					positionY: 1,
+					size: 60,
+					cornerRadius: 200,
+					margin: 40,
+					shadow: 1,
+				},
+			],
+		};
+
+		expect(resolveWebcamOverlayAtTime(webcam, 500)).toBe(webcam);
 	});
 });

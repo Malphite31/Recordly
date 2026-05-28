@@ -9,6 +9,7 @@ import {
 	DownloadSimple as Download,
 	FolderOpen,
 	Gear,
+	Keyboard as KeyboardIcon,
 	Pause,
 	Camera as PhCameraRegular,
 	Play,
@@ -19,6 +20,7 @@ import {
 	SkipBack,
 	SkipForward,
 	Sparkle,
+	Stamp as StampIcon,
 	ArrowCounterClockwise as Undo2,
 	UserCircle as User,
 	SpeakerLow as Volume1,
@@ -114,6 +116,12 @@ const PhSparkle = (props: { className?: string; weight?: "fill" | "regular" }) =
 const PhSettings = (props: { className?: string; weight?: "fill" | "regular" }) => (
 	<Gear weight={props.weight ?? "regular"} className={props.className} />
 );
+const PhKeyboard = (props: { className?: string; weight?: "fill" | "regular" }) => (
+	<KeyboardIcon weight={props.weight ?? "regular"} className={props.className} />
+);
+const PhWatermark = (props: { className?: string; weight?: "fill" | "regular" }) => (
+	<StampIcon weight={props.weight ?? "regular"} className={props.className} />
+);
 
 import type { SourceAudioTrackSettings } from "@/components/video-editor/audio/audioTypes";
 import { extensionHost } from "@/lib/extensions";
@@ -153,6 +161,8 @@ import {
 	validateProjectData,
 } from "./projectPersistence";
 import { SettingsPanel } from "./SettingsPanel";
+import { KeyboardOverlaySidebar } from "./KeyboardOverlaySidebar";
+import { WatermarkSidebar } from "./WatermarkSidebar";
 import { getDevOpenRecordingConfig, getSmokeExportConfig } from "./smokeExportConfig";
 import { createSmokeExportProgressSampler } from "./smokeExportProgress";
 import {
@@ -167,6 +177,7 @@ import {
 	normalizeCursorTelemetry,
 	shouldAutoApplyFreshRecordingZoomsForSource,
 } from "./timeline/zoomSuggestionUtils";
+import { parseKeyboardTelemetry } from "@/lib/keyboardOverlayUtils";
 import {
 	type AnnotationRegion,
 	type AudioRegion,
@@ -189,6 +200,8 @@ import {
 	DEFAULT_CROP_REGION,
 	DEFAULT_CURSOR_STYLE,
 	DEFAULT_FIGURE_DATA,
+	DEFAULT_KEYBOARD_OVERLAY_SETTINGS,
+	DEFAULT_WATERMARK_SETTINGS,
 	DEFAULT_WEBCAM_OVERLAY,
 	DEFAULT_WEBCAM_TIME_OFFSET_MS,
 	DEFAULT_ZOOM_IN_DURATION_MS,
@@ -202,12 +215,14 @@ import {
 	type FigureData,
 	getClipSourceEndMs,
 	getTimelineDurationMs,
+	type KeyboardOverlaySettings,
 	type Padding,
 	mapSourceTimeToTimelineTime as resolveSourceTimeToTimelineTime,
 	mapTimelineTimeToSourceTime as resolveTimelineTimeToSourceTime,
 	type SpeedRegion,
 	type TrimRegion,
 	trimsToClips,
+	type WatermarkSettings,
 	type WebcamOverlaySettings,
 	type ZoomDepth,
 	type ZoomFocus,
@@ -497,6 +512,12 @@ export default function VideoEditor() {
 	const [speedRegions, setSpeedRegions] = useState<SpeedRegion[]>([]);
 	const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([]);
 	const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+	const [keyboardOverlaySettings, setKeyboardOverlaySettings] = useState<KeyboardOverlaySettings>(
+		() => ({ ...DEFAULT_KEYBOARD_OVERLAY_SETTINGS }),
+	);
+	const [watermarkSettings, setWatermarkSettings] = useState<WatermarkSettings>(() => ({
+		...DEFAULT_WATERMARK_SETTINGS,
+	}));
 	const [audioRegions, setAudioRegions] = useState<AudioRegion[]>([]);
 	const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null);
 	const [sourceAudioTrackSettingsByClip, setSourceAudioTrackSettingsByClip] = useState<
@@ -1529,6 +1550,16 @@ export default function VideoEditor() {
 				icon: PhCaptions,
 			},
 			{
+				id: "keyboard" as const,
+				label: t("settings.sections.keyboard", "Keyboard"),
+				icon: PhKeyboard,
+			},
+			{
+				id: "watermark" as const,
+				label: t("settings.sections.watermark", "Watermark"),
+				icon: PhWatermark,
+			},
+			{
 				id: "settings" as const,
 				label: t("settings.sections.settings", "Settings"),
 				icon: PhSettings,
@@ -1622,6 +1653,43 @@ export default function VideoEditor() {
 		() => videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null),
 		[videoPath, videoSourcePath],
 	);
+
+	// Auto-load keyboard telemetry sidecar (.keyboard.json) when the video changes
+	// so keyboard overlay events appear automatically on the timeline.
+	useEffect(() => {
+		let cancelled = false;
+		const sourcePath = currentSourcePath;
+		if (!sourcePath) {
+			setKeyboardOverlaySettings((prev) => ({ ...prev, events: [] }));
+			return;
+		}
+
+		void (async () => {
+			try {
+				const result = await window.electronAPI.getKeyboardTelemetry(sourcePath);
+				if (cancelled) return;
+				if (result.success && result.events && result.events.length > 0) {
+					const events = parseKeyboardTelemetry(result.events);
+					setKeyboardOverlaySettings((prev) => ({
+						...prev,
+						events,
+						enabled: events.length > 0 ? true : prev.enabled,
+					}));
+				} else {
+					setKeyboardOverlaySettings((prev) => ({ ...prev, events: [] }));
+				}
+			} catch (err) {
+				console.warn("[KeyboardOverlay] Failed to load keyboard telemetry:", err);
+				if (!cancelled) {
+					setKeyboardOverlaySettings((prev) => ({ ...prev, events: [] }));
+				}
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [currentSourcePath]);
 	const projectDisplayName = useMemo(() => {
 		const fileName =
 			currentProjectPath?.split(/[\\/]/).pop() ??
@@ -2095,6 +2163,8 @@ export default function VideoEditor() {
 		setHasClipSourceAudio(false);
 		setAutoCaptions([]);
 		setAutoCaptionSettings((prev) => ({ ...prev, enabled: false }));
+		setKeyboardOverlaySettings({ ...DEFAULT_KEYBOARD_OVERLAY_SETTINGS });
+		setWatermarkSettings({ ...DEFAULT_WATERMARK_SETTINGS });
 		setSelectedZoomId(null);
 		setSelectedClipId(null);
 		setSelectedAnnotationId(null);
@@ -4348,6 +4418,8 @@ export default function VideoEditor() {
 						sourceAudioFallbackStartDelayMsByPath:
 							audio.sourceAudioFallbackStartDelayMsByPath,
 						sourceAudioTrackSettings: sourceAudioTrackSettingsForExport,
+						keyboardOverlay: keyboardOverlaySettings,
+						watermark: watermarkSettings,
 						previewWidth,
 						previewHeight,
 						onProgress: (progress: ExportProgress) => {
@@ -5585,6 +5657,21 @@ export default function VideoEditor() {
 						{/* Panel */}
 						{activeEffectSection === "extensions" ? (
 							<ExtensionManager />
+						) : activeEffectSection === "keyboard" ? (
+							<div className="w-[332px] min-w-[280px] max-w-[332px] bg-editor-panel rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
+								<KeyboardOverlaySidebar
+									settings={keyboardOverlaySettings}
+									currentTimeMs={timelinePlayheadTime * 1000}
+									onChange={setKeyboardOverlaySettings}
+								/>
+							</div>
+						) : activeEffectSection === "watermark" ? (
+							<div className="w-[332px] min-w-[280px] max-w-[332px] bg-editor-panel rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
+								<WatermarkSidebar
+									settings={watermarkSettings}
+									onChange={setWatermarkSettings}
+								/>
+							</div>
 						) : (
 							<SettingsPanel
 								panelMode="editor"
@@ -5968,6 +6055,8 @@ export default function VideoEditor() {
 																),
 															)
 												}
+												keyboardOverlay={keyboardOverlaySettings}
+												watermark={watermarkSettings}
 												suspendRendering={shouldSuspendPreviewRendering}
 											/>
 										</div>
@@ -6254,6 +6343,7 @@ export default function VideoEditor() {
 						onSourceAudioTracksMetaChange={(tracks) => {
 							audio.onSourceAudioTracksMetaChange(tracks);
 						}}
+						keyboardEvents={keyboardOverlaySettings.events}
 					/>
 				</div>
 			</div>

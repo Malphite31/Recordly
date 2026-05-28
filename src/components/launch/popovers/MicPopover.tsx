@@ -12,6 +12,7 @@ export function MicPopover({
 	trigger,
 	disabled,
 	systemAudioEnabled,
+	systemAudioStatus,
 	onToggleSystemAudio,
 	microphoneEnabled,
 	onDisableMicrophone,
@@ -23,6 +24,7 @@ export function MicPopover({
 	trigger: ReactElement;
 	disabled?: boolean;
 	systemAudioEnabled: boolean;
+	systemAudioStatus: "off" | "on" | "unavailable";
 	onToggleSystemAudio: () => void;
 	microphoneEnabled: boolean;
 	onDisableMicrophone: () => void;
@@ -61,6 +63,13 @@ export function MicPopover({
 					? t("recording.disableSystemAudio")
 					: t("recording.enableSystemAudio")}
 			</DropdownItem>
+			<div className="px-3 pb-1 pt-0 text-[11px] text-[var(--launch-text-muted)]">
+				{systemAudioStatus === "off"
+					? "System audio status: Off"
+					: systemAudioStatus === "unavailable"
+						? "System audio status: Enabled, but unavailable for this source"
+						: "System audio status: Enabled"}
+			</div>
 			{microphoneEnabled && (
 				<DropdownItem
 					icon={<MicrophoneSlashIcon size={16} />}

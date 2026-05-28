@@ -11,11 +11,12 @@ import {
 	useState,
 } from "react";
 import type {
+	SourceAudioTrackSetting,
 	SourceAudioTrackSettings,
 	SourceAudioTrackWithPeaks,
 } from "@/components/video-editor/audio/audioTypes";
 import { cn } from "@/lib/utils";
-import { CLIP_ROW_ID, SOURCE_AUDIO_ROW_ID, ZOOM_ROW_ID } from "../../core/constants";
+import { CLIP_ROW_ID, SOURCE_AUDIO_ROW_ID, ZOOM_ROW_ID, KEYBOARD_ROW_ID } from "../../core/constants";
 import {
 	getAnnotationTrackIndex,
 	getAnnotationTrackRowId,
@@ -262,6 +263,45 @@ interface AudioItemWithWaveformProps {
 	onSelectAudio?: (id: string | null) => void;
 }
 
+interface ClipItemWithWaveformProps {
+	item: TimelineRenderItem;
+	isSelected: boolean;
+	sourceAudioTrack: SourceAudioTrackWithPeaks | null;
+	sourceAudioTrackSettings: SourceAudioTrackSetting;
+	onSelectClip?: (id: string | null) => void;
+	isLoading?: boolean;
+}
+
+function ClipItemWithWaveform({
+	item,
+	isSelected,
+	sourceAudioTrack,
+	sourceAudioTrackSettings,
+	onSelectClip,
+	isLoading = false,
+}: ClipItemWithWaveformProps) {
+	return (
+		<Item
+			id={item.id}
+			rowId={item.rowId}
+			span={item.span}
+			isSelected={isSelected}
+			onSelectId={onSelectClip}
+			variant="clip"
+			speedValue={item.speedValue}
+			waveformPeaks={sourceAudioTrack?.peaks ?? null}
+			waveformSegmentSpan={item.sourceSpan ?? { start: 0, end: item.span.end - item.span.start }}
+			waveformGain={Math.max(0, Math.min(1, sourceAudioTrackSettings.volume))}
+			waveformNormalize={Boolean(sourceAudioTrackSettings.normalize)}
+			muted={item.muted}
+			isLoading={isLoading}
+			loadingLabel="Analyzing..."
+		>
+			{item.label}
+		</Item>
+	);
+}
+
 function AudioItemWithWaveform({
 	item,
 	span,
@@ -322,9 +362,11 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 	isLoading = false,
 }: TimelineCanvasRowsProps) {
 	const hiddenIds = useMemo(() => new Set(liveHiddenItemIds ?? []), [liveHiddenItemIds]);
-	const { clipItems, zoomItems, annotationRows, audioRows } = useMemo(() => {
+	const primarySourceAudioTrack = sourceAudioTracks[0] ?? null;
+	const { clipItems, zoomItems, annotationRows, audioRows, keyboardItems } = useMemo(() => {
 		const nextClipItems: TimelineRenderItem[] = [];
 		const nextZoomItems: TimelineRenderItem[] = [];
+		const nextKeyboardItems: TimelineRenderItem[] = [];
 		const annotationBuckets = new Map<number, TimelineRenderItem[]>();
 		const audioBuckets = new Map<number, TimelineRenderItem[]>();
 
@@ -335,6 +377,10 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 			}
 			if (item.rowId === ZOOM_ROW_ID) {
 				nextZoomItems.push(item);
+				continue;
+			}
+			if (item.rowId === KEYBOARD_ROW_ID) {
+				nextKeyboardItems.push(item);
 				continue;
 			}
 			if (isAnnotationTrackRowId(item.rowId)) {
@@ -370,6 +416,7 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 			zoomItems: nextZoomItems,
 			annotationRows: annotationRowsSorted,
 			audioRows: audioRowsSorted,
+			keyboardItems: nextKeyboardItems,
 		};
 	}, [items]);
 
@@ -377,22 +424,25 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 		<>
 			<Row id={CLIP_ROW_ID} isEmpty={clipItems.length === 0} hint={HINT_CLIP}>
 				<ClipMarkerOverlay videoDurationMs={videoDurationMs} />
-				{clipItems.map((item) => (
-					<Item
-						id={item.id}
-						key={item.id}
-						rowId={item.rowId}
-						span={item.span}
-						isSelected={selectAllBlocksActive || item.id === selectedClipId}
-						onSelectId={onSelectClip}
-						variant="clip"
-						speedValue={item.speedValue}
-						isLoading={isLoading}
-						loadingLabel="Analyzing..."
-					>
-						{item.label}
-					</Item>
-				))}
+				{clipItems.map((item) => {
+					const settings = primarySourceAudioTrack
+						? (getSourceAudioTrackSettingsForClip?.(item.id)?.[
+								primarySourceAudioTrack.id
+							] ?? { volume: 1, normalize: false })
+						: { volume: 1, normalize: false };
+
+					return (
+						<ClipItemWithWaveform
+							key={item.id}
+							item={item}
+							isSelected={selectAllBlocksActive || item.id === selectedClipId}
+							sourceAudioTrack={primarySourceAudioTrack}
+							sourceAudioTrackSettings={settings}
+							onSelectClip={onSelectClip}
+							isLoading={isLoading}
+						/>
+					);
+				})}
 			</Row>
 			{showSourceAudioTrack &&
 				sourceAudioTracks.map((track) => (
@@ -412,7 +462,7 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 									onSelect={() => onSelectClip?.(item.id)}
 									variant="audio"
 									waveformPeaks={track.peaks}
-									waveformSegmentSpan={item.sourceSpan ?? item.span}
+									waveformSegmentSpan={item.sourceSpan ?? { start: 0, end: item.span.end - item.span.start }}
 									waveformGain={Math.max(0, Math.min(1, settings.volume))}
 									waveformNormalize={Boolean(settings.normalize)}
 									muted={item.muted}
@@ -509,6 +559,24 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 					))}
 				</Row>
 			))}
+
+			{keyboardItems.length > 0 && (
+				<Row key={KEYBOARD_ROW_ID} id={KEYBOARD_ROW_ID}>
+					{keyboardItems.map((item) => (
+						<Item
+							key={item.id}
+							id={item.id}
+							rowId={item.rowId}
+							span={item.span}
+							disabled
+							variant="keyboard"
+							keyboardKeys={item.keyboardKeys}
+						>
+							{item.label}
+						</Item>
+					))}
+				</Row>
+			)}
 		</>
 	);
 });
@@ -689,7 +757,8 @@ export default function TimelineCanvas({
 			if (isAudioTrackRowId(item.rowId)) audioRowIds.add(item.rowId);
 		}
 		const sourceAudioRows = showSourceAudioTrack ? sourceAudioTracks.length : 0;
-		return 2 + sourceAudioRows + annotationRowIds.size + audioRowIds.size;
+		const keyboardRows = items.some((item) => item.rowId === KEYBOARD_ROW_ID) ? 1 : 0;
+		return 2 + sourceAudioRows + annotationRowIds.size + audioRowIds.size + keyboardRows;
 	}, [items, showSourceAudioTrack, sourceAudioTracks.length]);
 	const timelineRowsMinHeightPx = getTimelineRowsMinHeightPx(timelineRowCount);
 	const timelineContentMinHeightPx = getTimelineContentMinHeightPx(timelineRowCount);

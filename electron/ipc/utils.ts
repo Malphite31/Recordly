@@ -67,6 +67,10 @@ export function getTelemetryPathForVideo(videoPath: string) {
 	return `${videoPath}.cursor.json`;
 }
 
+export function getKeyboardTelemetryPathForVideo(videoPath: string) {
+	return `${videoPath}.keyboard.json`;
+}
+
 export function isAutoRecordingPath(filePath: string) {
 	return path.basename(filePath).startsWith(AUTO_RECORDING_PREFIX);
 }

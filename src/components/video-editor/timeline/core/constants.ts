@@ -3,6 +3,10 @@ export const CLIP_ROW_ID = "row-clip";
 export const ANNOTATION_ROW_ID = "row-annotation";
 export const AUDIO_ROW_ID = "row-audio";
 export const SOURCE_AUDIO_ROW_ID = "row-source-audio";
+export const KEYBOARD_ROW_ID = "row-keyboard";
+export const WEBCAM_ROW_ID = "row-webcam";
+export const LAYOUT_ROW_ID = "row-layout";
+export const CAMERA_ZOOM_ROW_ID = "row-camera-zoom";
 export const ANNOTATION_ROW_PREFIX = `${ANNOTATION_ROW_ID}-`;
 export const AUDIO_ROW_PREFIX = `${AUDIO_ROW_ID}-`;
 
