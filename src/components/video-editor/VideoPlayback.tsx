@@ -130,6 +130,7 @@ import { applyCanvasSceneTransform } from "@/lib/extensions/sceneTransform";
 import { getSquircleSvgPath } from "@/lib/geometry/squircle";
 import { type AspectRatio, formatAspectRatioForCSS } from "@/utils/aspectRatioUtils";
 import { AnnotationOverlay } from "./AnnotationOverlay";
+import { WebcamOverlayEditor } from "./WebcamOverlayEditor";
 import {
 	DEFAULT_CONNECTED_ZOOM_DURATION_MS,
 	DEFAULT_CONNECTED_ZOOM_EASING,
@@ -141,6 +142,8 @@ import {
 	DEFAULT_CURSOR_STYLE,
 	DEFAULT_CURSOR_SMOOTHING,
 	DEFAULT_CURSOR_SWAY,
+	DEFAULT_CURSOR_AUTO_HIDE,
+	DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS,
 	DEFAULT_PADDING,
 	DEFAULT_WEBCAM_CORNER_RADIUS,
 	DEFAULT_WEBCAM_REACT_TO_ZOOM,
@@ -179,6 +182,7 @@ import {
 	getWebcamCropSourceRect,
 	getWebcamOverlayPosition,
 	getWebcamOverlaySizePx,
+	resolveWebcamOverlayAtTime,
 } from "./webcamOverlay";
 
 type PlaybackAnimationState = {
@@ -372,13 +376,28 @@ interface VideoPlaybackProps {
 	cursorClickBounce?: number;
 	cursorClickBounceDuration?: number;
 	cursorSway?: number;
+	cursorAutoHide?: boolean;
+	cursorAutoHideDelayMs?: number;
 	volume?: number;
 	keyboardOverlay?: KeyboardOverlaySettings | null;
 	watermark?: WatermarkSettings | null;
-	suspendRendering?: boolean;
+	/** Sidecar audio paths (e.g. system.wav) to play alongside the video. */
+	sourceAudioFallbackPaths?: string[];
+	/** Start delay in ms per sidecar path (from recording metadata). */
+	sourceAudioFallbackStartDelayMsByPath?: Record<string, number>;	suspendRendering?: boolean;
+	/** Called when the user clicks on the webcam bubble in the preview. */
+	onWebcamClick?: () => void;
+	/** Called when the user drags handles on the webcam bubble to resize/reposition/round it. */
+	onWebcamChange?: (patch: Partial<WebcamOverlaySettings>) => void;
+	/** When true, show the interactive overlay editor handles on the webcam bubble. */
+	webcamEditorActive?: boolean;
+	/** Increment to force a re-layout of the webcam bubble (e.g. after applying a preset). */
+	webcamLayoutKey?: number;
+	/** Called when the user clicks the crop button on the webcam overlay editor. */
+	onWebcamCropOpen?: () => void;
 }
 
-/** Renders the keyboard overlay HUD on a canvas that fills the preview container. */
+/** Renders keyboard overlay HUD on a canvas that fills the preview container. */
 function KeyboardOverlayCanvas({
 	settings,
 	currentTimeMs,
@@ -470,6 +489,7 @@ function WatermarkCanvas({
 
 export interface VideoPlaybackRef {
 	video: HTMLVideoElement | null;
+	webcamVideo: HTMLVideoElement | null;
 	app: Application | null;
 	videoSprite: Sprite | null;
 	videoContainer: Container | null;
@@ -542,10 +562,17 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cursorClickBounce = DEFAULT_CURSOR_CLICK_BOUNCE,
 			cursorClickBounceDuration = DEFAULT_CURSOR_CLICK_BOUNCE_DURATION,
 			cursorSway = DEFAULT_CURSOR_SWAY,
+			cursorAutoHide = DEFAULT_CURSOR_AUTO_HIDE,
+			cursorAutoHideDelayMs = DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS,
 			volume = 1,
 			keyboardOverlay = null,
 			watermark = null,
 			suspendRendering = false,
+			onWebcamClick,
+			onWebcamChange,
+			webcamEditorActive = false,
+			webcamLayoutKey = 0,
+			onWebcamCropOpen,
 		},
 		ref,
 	) => {
@@ -591,6 +618,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const webcamVideoRef = useRef<HTMLVideoElement | null>(null);
 		const webcamBubbleRef = useRef<HTMLDivElement | null>(null);
 		const webcamBubbleInnerRef = useRef<HTMLDivElement | null>(null);
+		const bubbleRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 		const [webcamVideoDimensions, setWebcamVideoDimensions] = useState<{
 			width: number;
 			height: number;
@@ -822,16 +850,24 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			return () => cancelAnimationFrame(frame);
 		}, [activeCaptionLayout, autoCaptionSettings]);
 		const motionBlurStateRef = useRef<MotionBlurState>(createMotionBlurState());
-		const webcamEnabled = webcam?.enabled ?? false;
-		const webcamMargin = webcam?.margin ?? 24;
-		const webcamSize = webcam?.size ?? DEFAULT_WEBCAM_SIZE;
-		const webcamReactToZoom = webcam?.reactToZoom ?? DEFAULT_WEBCAM_REACT_TO_ZOOM;
-		const webcamPositionPreset = webcam?.positionPreset ?? webcam?.corner ?? "bottom-right";
-		const webcamPositionX = webcam?.positionX ?? 1;
-		const webcamPositionY = webcam?.positionY ?? 1;
-		const webcamCorner = webcam?.corner ?? "bottom-right";
-		const webcamCornerRadius = webcam?.cornerRadius ?? DEFAULT_WEBCAM_CORNER_RADIUS;
-		const webcamShadow = webcam?.shadow ?? DEFAULT_WEBCAM_SHADOW;
+		// Resolve webcam settings at current time — applies morph frame interpolation
+		const resolvedWebcam = useMemo(
+			() => (webcam ? resolveWebcamOverlayAtTime(webcam, currentTime * 1000) : webcam),
+			[webcam, currentTime],
+		);
+		const webcamEnabled = resolvedWebcam?.enabled ?? false;
+		const webcamMargin = resolvedWebcam?.margin ?? 24;
+		const webcamSize = resolvedWebcam?.size ?? DEFAULT_WEBCAM_SIZE;
+		const webcamReactToZoom = resolvedWebcam?.reactToZoom ?? DEFAULT_WEBCAM_REACT_TO_ZOOM;
+		const webcamPositionPreset = resolvedWebcam?.positionPreset ?? resolvedWebcam?.corner ?? "bottom-right";
+		const webcamPositionX = resolvedWebcam?.positionX ?? 1;
+		const webcamPositionY = resolvedWebcam?.positionY ?? 1;
+		const webcamCorner = resolvedWebcam?.corner ?? "bottom-right";
+		const webcamCornerRadius = resolvedWebcam?.cornerRadius ?? DEFAULT_WEBCAM_CORNER_RADIUS;
+		const webcamShadow = resolvedWebcam?.shadow ?? DEFAULT_WEBCAM_SHADOW;
+		const webcamLayoutMode = resolvedWebcam?.layoutMode ?? "overlay";
+		const webcamDockHeightFraction = resolvedWebcam?.dockHeightFraction ?? 0.38;
+		const webcamScreenMaskRadius = resolvedWebcam?.screenMaskRadius ?? 0;
 		const webcamTimeOffsetMs = webcam?.timeOffsetMs;
 		const webcamCropRegion = webcam?.cropRegion;
 		const webcamMirror = webcam?.mirror ?? false;
@@ -839,27 +875,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			if (!webcamVideoDimensions) {
 				return { opacity: 0 };
 			}
-
-			const { sx, sy, sw, sh } = getWebcamCropSourceRect(
-				webcamCropRegion,
-				webcamVideoDimensions.width,
-				webcamVideoDimensions.height,
-			);
-			const coverScale = Math.max(1 / sw, 1 / sh);
-			const drawWidth = webcamVideoDimensions.width * coverScale;
-			const drawHeight = webcamVideoDimensions.height * coverScale;
-			const drawX = (1 - sw * coverScale) / 2 - sx * coverScale;
-			const drawY = (1 - sh * coverScale) / 2 - sy * coverScale;
-
-			return {
-				left: `${drawX * 100}%`,
-				top: `${drawY * 100}%`,
-				width: `${drawWidth * 100}%`,
-				height: `${drawHeight * 100}%`,
-				maxWidth: "none",
-				willChange: "left, top, width, height",
-			};
-		}, [webcamCropRegion, webcamVideoDimensions]);
+			// The video always fills the bubble 100%.
+			// The mask (squircle clipPath) is positioned via applyWebcamBubbleLayout using cropRegion.
+			return { left: "0%", top: "0%", width: "100%", height: "100%", maxWidth: "none" };
+		}, [webcamVideoDimensions]);
 
 		const applyWebcamBubbleLayout = useCallback(
 			(zoomScale: number) => {
@@ -873,18 +892,89 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					return;
 				}
 
+				const containerW = overlay.clientWidth;
+				const containerH = overlay.clientHeight;
+
+				// ── Dock-bottom layout ──────────────────────────────────────────
+				if (webcamLayoutMode === "dock-bottom" || webcamLayoutMode === "dock-bottom-portrait") {
+					const dockH = Math.round(containerH * webcamDockHeightFraction);
+					const screenH = containerH - dockH;
+
+					// Webcam fills the bottom band, full width
+					bubble.style.display = "block";
+					bubble.style.left = "0px";
+					bubble.style.top = `${screenH}px`;
+					bubble.style.width = `${containerW}px`;
+					bubble.style.height = `${dockH}px`;
+					bubble.style.aspectRatio = "unset";
+					bubble.style.filter = "none";
+					bubble.style.borderRadius = "0px";
+					bubble.style.boxShadow = "none";
+
+					// Webcam inner: if cornerRadius > 0 clip to circle/squircle centered
+					bubbleInner.style.overflow = "hidden";
+					bubbleInner.style.contain = "paint";
+					if (webcamCornerRadius >= 400) {
+						// Circle: center a square in the band
+						const circleSize = Math.min(containerW * 0.55, dockH * 0.9);
+						const cx = (containerW - circleSize) / 2;
+						const cy = (dockH - circleSize) / 2;
+						const squirclePath = getSquircleSvgPath({ x: cx, y: cy, width: circleSize, height: circleSize, radius: webcamCornerRadius });
+						bubbleInner.style.clipPath = `path('${squirclePath}')`;
+						bubbleInner.style.setProperty("-webkit-clip-path", `path('${squirclePath}')`);
+					} else {
+						bubbleInner.style.clipPath = "none";
+						bubbleInner.style.removeProperty("-webkit-clip-path");
+					}
+
+					// Apply screen mask overlay via a sibling div if screenMaskRadius > 0
+					// We use the overlay element's data attribute to signal the Pixi layer
+					overlay.dataset.screenMaskRadius = String(webcamScreenMaskRadius);
+					overlay.dataset.screenMaskHeight = String(screenH);
+					overlay.dataset.dockMode = "1";
+					return;
+				}
+
+				// ── Overlay (bubble) layout ─────────────────────────────────────
+				overlay.dataset.dockMode = "0";
+				overlay.dataset.screenMaskRadius = "0";
+
 				const scaledSize = getWebcamOverlaySizePx({
-					containerWidth: overlay.clientWidth,
-					containerHeight: overlay.clientHeight,
+					containerWidth: containerW,
+					containerHeight: containerH,
 					sizePercent: webcamSize,
 					margin: webcamMargin,
 					zoomScale,
 					reactToZoom: webcamReactToZoom,
 				});
+
+				// Compute bubble dimensions first (needed for position calculation)
+				const videoEl = webcamVideoRef.current;
+				const videoAspect =
+					videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0
+						? videoEl.videoWidth / videoEl.videoHeight
+						: 1;
+				const isCircleMode = webcamCornerRadius >= 400;
+				const isFullSize = webcamSize >= 99 && webcamMargin === 0;
+
+				let bubbleW: number;
+				let bubbleH: number;
+				if (isFullSize) {
+					bubbleW = containerW;
+					bubbleH = containerH;
+				} else if (isCircleMode) {
+					bubbleW = scaledSize;
+					bubbleH = scaledSize;
+				} else {
+					bubbleW = scaledSize;
+					bubbleH = Math.round(scaledSize / videoAspect);
+				}
+
 				const { x, y } = getWebcamOverlayPosition({
-					containerWidth: overlay.clientWidth,
-					containerHeight: overlay.clientHeight,
-					size: scaledSize,
+					containerWidth: containerW,
+					containerHeight: containerH,
+					size: bubbleW,
+					sizeHeight: bubbleH,
 					margin: webcamMargin,
 					positionPreset: webcamPositionPreset,
 					positionX: webcamPositionX,
@@ -895,14 +985,32 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				bubble.style.display = "block";
 				bubble.style.left = `${x}px`;
 				bubble.style.top = `${y}px`;
-				bubble.style.width = `${scaledSize}px`;
-				bubble.style.height = `${scaledSize}px`;
-				bubble.style.aspectRatio = "1 / 1";
+				bubble.style.width = `${bubbleW}px`;
+				bubble.style.height = `${bubbleH}px`;
+				bubble.style.aspectRatio = "unset";
+
+				// The mask (squircle clipPath) is positioned using cropRegion within the bubble.
+				// cropRegion = {x, y, width, height} in 0-1 fractions of the bubble.
+				// Default: full bubble (x=0, y=0, width=1, height=1).
+				const crop = webcamCropRegion
+					? {
+							x: Math.max(0, Math.min(webcamCropRegion.x ?? 0, 0.99)),
+							y: Math.max(0, Math.min(webcamCropRegion.y ?? 0, 0.99)),
+							width: Math.max(0.05, Math.min(webcamCropRegion.width ?? 1, 1)),
+							height: Math.max(0.05, Math.min(webcamCropRegion.height ?? 1, 1)),
+						}
+					: { x: 0, y: 0, width: 1, height: 1 };
+
+				const maskX = crop.x * bubbleW;
+				const maskY = crop.y * bubbleH;
+				const maskW = crop.width * bubbleW;
+				const maskH = crop.height * bubbleH;
+
 				const squirclePath = getSquircleSvgPath({
-					x: 0,
-					y: 0,
-					width: scaledSize,
-					height: scaledSize,
+					x: maskX,
+					y: maskY,
+					width: maskW,
+					height: maskH,
 					radius: webcamCornerRadius,
 				});
 				bubble.style.filter = `drop-shadow(0 ${Math.round(scaledSize * 0.06)}px ${Math.round(
@@ -916,16 +1024,23 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				bubbleInner.style.contain = "paint";
 				bubbleInner.style.clipPath = `path('${squirclePath}')`;
 				bubbleInner.style.setProperty("-webkit-clip-path", `path('${squirclePath}')`);
+
+				// Track bubble rect for the overlay editor
+				bubbleRectRef.current = { x, y, w: bubbleW, h: bubbleH };
 			},
 			[
 				webcamCorner,
 				webcamCornerRadius,
+				webcamCropRegion,
+				webcamDockHeightFraction,
 				webcamEnabled,
+				webcamLayoutMode,
 				webcamMargin,
 				webcamPositionPreset,
 				webcamPositionX,
 				webcamPositionY,
 				webcamReactToZoom,
+				webcamScreenMaskRadius,
 				webcamShadow,
 				webcamSize,
 				webcamVideoPath,
@@ -1039,6 +1154,12 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				borderRadius,
 				padding,
 				frameInsets,
+				screenMaskHeight:
+					webcamEnabled &&
+					(webcamLayoutMode === "dock-bottom" || webcamLayoutMode === "dock-bottom-portrait")
+						? Math.round(container.clientHeight * (1 - webcamDockHeightFraction))
+						: null,
+				screenMaskRadius: webcamScreenMaskRadius,
 			});
 
 			if (result) {
@@ -1128,6 +1249,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			shadowIntensity,
 			applyWebcamBubbleLayout,
 			syncPreviewMotionBlurQuality,
+			webcamEnabled,
+			webcamLayoutMode,
+			webcamDockHeightFraction,
+			webcamScreenMaskRadius,
 		]);
 
 		useEffect(() => {
@@ -1252,6 +1377,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
 		useImperativeHandle(ref, () => ({
 			video: videoRef.current,
+			webcamVideo: webcamVideoRef.current,
 			app: appRef.current,
 			videoSprite: videoSpriteRef.current,
 			videoContainer: videoContainerRef.current,
@@ -1350,6 +1476,23 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		};
 
 		const handleOverlayPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+			// Check if the click lands on the webcam bubble — if so, fire onWebcamClick
+			if (onWebcamClick && webcamEnabled && webcamVideoPath) {
+				const bubble = webcamBubbleRef.current;
+				if (bubble && bubble.style.display !== "none") {
+					const bubbleRect = bubble.getBoundingClientRect();
+					if (
+						event.clientX >= bubbleRect.left &&
+						event.clientX <= bubbleRect.right &&
+						event.clientY >= bubbleRect.top &&
+						event.clientY <= bubbleRect.bottom
+					) {
+						onWebcamClick();
+						return;
+					}
+				}
+			}
+
 			if (isPlayingRef.current) return;
 			const regionId = selectedZoomIdRef.current;
 			if (!regionId) return;
@@ -1790,6 +1933,13 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			if (!pixiReady || !videoReady) return;
 			applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
 		}, [applyWebcamBubbleLayout, pixiReady, videoReady]);
+
+		// Force re-layout when webcamLayoutKey changes (e.g. after applying a preset)
+		useEffect(() => {
+			if (!pixiReady || !videoReady) return;
+			applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
+			// eslint-disable-next-line react-hooks/exhaustive-deps
+		}, [webcamLayoutKey]);
 
 		const syncWebcamMedia = useCallback(() => {
 			const webcamVideo = webcamVideoRef.current;
@@ -2559,6 +2709,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			overlay.setClickBounce(cursorClickBounce);
 			overlay.setClickBounceDuration(cursorClickBounceDuration);
 			overlay.setSway(cursorSway);
+			overlay.setAutoHide(cursorAutoHide);
+			overlay.setAutoHideDelayMs(cursorAutoHideDelayMs);
 
 			void (async () => {
 				try {
@@ -2862,7 +3014,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					<div
 						ref={overlayRef}
 						className="absolute inset-0 select-none"
-						style={{ pointerEvents: "none" }}
+						style={{ pointerEvents: webcamEnabled && webcamVideoPath ? "auto" : "none" }}
 						onPointerDown={handleOverlayPointerDown}
 						onPointerMove={handleOverlayPointerMove}
 						onPointerUp={handleOverlayPointerUp}
@@ -2900,7 +3052,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 											<video
 												ref={webcamVideoRef}
 												src={webcamVideoPath}
-												className="pointer-events-none absolute inset-0 block h-full w-full object-fill"
+												className="pointer-events-none absolute inset-0 block h-full w-full object-cover"
 												muted
 												playsInline
 												preload="auto"
@@ -2913,6 +3065,17 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 								</div>
 							</div>
 						) : null}
+						{/* Webcam overlay editor — shown when webcamEditorActive */}
+						{webcamEditorActive && webcam && webcamVideoPath && webcam.enabled && onWebcamChange && (
+							<WebcamOverlayEditor
+								containerWidth={stageSizeRef.current.width || overlayRef.current?.clientWidth || 0}
+								containerHeight={stageSizeRef.current.height || overlayRef.current?.clientHeight || 0}
+								webcam={webcam}
+								onWebcamChange={onWebcamChange}
+								onOpenCrop={onWebcamCropOpen}
+								bubbleRect={bubbleRectRef.current}
+							/>
+						)}
 						{activeCaptionLayout && autoCaptionSettings ? (
 							<div
 								className="pointer-events-none absolute inset-x-0 flex justify-center"
@@ -3010,6 +3173,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						) : null}
 						{(() => {
 							const filtered = (annotationRegions || []).filter((annotation) => {
+								// Skip layout items (trackIndex === -1) — they don't render on screen
+								if (annotation.trackIndex === -1) return false;
+
 								if (
 									typeof annotation.startMs !== "number" ||
 									typeof annotation.endMs !== "number"

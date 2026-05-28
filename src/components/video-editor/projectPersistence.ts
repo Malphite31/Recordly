@@ -45,6 +45,7 @@ import {
 	DEFAULT_INPUT_OVERLAY_DATA,
 	DEFAULT_PADDING,
 	DEFAULT_PLAYBACK_SPEED,
+	DEFAULT_WATERMARK_SETTINGS,
 	DEFAULT_WEBCAM_CORNER_RADIUS,
 	DEFAULT_WEBCAM_MARGIN,
 	DEFAULT_WEBCAM_OVERLAY,
@@ -69,6 +70,7 @@ import {
 	type SpeedRegion,
 	type TrimRegion,
 	type WebcamOverlaySettings,
+	type WatermarkSettings,
 	type ZoomMotionBlurTuning,
 	type ZoomRegion,
 	type ZoomTransitionEasing,
@@ -114,6 +116,9 @@ export interface ProjectEditorState {
 	cursorClickBounce: number;
 	cursorClickBounceDuration: number;
 	cursorSway: number;
+	cursorAutoHide: boolean;
+	cursorAutoHideDelayMs: number;
+	cursorOffsetMs: number;
 	borderRadius: number;
 	padding: Padding;
 	/** Selected frame ID (e.g. "recordly.frames/browser-dark"), or null for none */
@@ -142,6 +147,7 @@ export interface ProjectEditorState {
 	gifFrameRate: GifFrameRate;
 	gifLoop: boolean;
 	gifSizePreset: GifSizePreset;
+	watermark: WatermarkSettings;
 }
 
 export interface EditorProjectData {
@@ -547,6 +553,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 							typeof region.showSourceAudio === "boolean"
 								? region.showSourceAudio
 								: false,
+						sourceStartMs:
+							isFiniteNumber(region.sourceStartMs) && (region.sourceStartMs ?? 0) >= 0
+								? Math.round(region.sourceStartMs ?? 0)
+								: undefined,
 					};
 				})
 		: [];
@@ -934,6 +944,15 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		cursorSway: isFiniteNumber((editor as Partial<ProjectEditorState>).cursorSway)
 			? clamp((editor as Partial<ProjectEditorState>).cursorSway as number, 0, 2)
 			: DEFAULT_CURSOR_SWAY,
+		cursorAutoHide: typeof (editor as Partial<ProjectEditorState>).cursorAutoHide === "boolean"
+			? (editor as Partial<ProjectEditorState>).cursorAutoHide as boolean
+			: false,
+		cursorAutoHideDelayMs: isFiniteNumber((editor as Partial<ProjectEditorState>).cursorAutoHideDelayMs)
+			? Math.max(200, Math.min(10000, (editor as Partial<ProjectEditorState>).cursorAutoHideDelayMs as number))
+			: 1500,
+		cursorOffsetMs: isFiniteNumber((editor as Partial<ProjectEditorState>).cursorOffsetMs)
+			? Math.max(-5000, Math.min(5000, (editor as Partial<ProjectEditorState>).cursorOffsetMs as number))
+			: 0,
 		borderRadius: typeof editor.borderRadius === "number" ? editor.borderRadius : 12.5,
 		padding: (() => {
 			const p = editor.padding;
@@ -1036,6 +1055,23 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? clamp(webcam.margin, 0, 96)
 				: DEFAULT_WEBCAM_MARGIN,
 			morphFrames: [],
+			layoutMode:
+				webcam.layoutMode === "overlay" ||
+				webcam.layoutMode === "dock-bottom" ||
+				webcam.layoutMode === "dock-bottom-portrait"
+					? webcam.layoutMode
+					: "overlay",
+			dockHeightFraction: isFiniteNumber(webcam.dockHeightFraction)
+				? clamp(webcam.dockHeightFraction, 0.1, 0.9)
+				: undefined,
+			screenMaskRadius: isFiniteNumber(webcam.screenMaskRadius)
+				? Math.max(0, webcam.screenMaskRadius)
+				: undefined,
+			activePresetId: typeof webcam.activePresetId === "string" ? webcam.activePresetId : undefined,
+			cropRegionByPreset:
+				webcam.cropRegionByPreset && typeof webcam.cropRegionByPreset === "object"
+					? webcam.cropRegionByPreset
+					: undefined,
 		},
 		sourceAudioTrackSettingsByClip:
 			editor.sourceAudioTrackSettingsByClip &&
@@ -1079,6 +1115,35 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			editor.gifSizePreset === "original"
 				? editor.gifSizePreset
 				: "medium",
+		watermark: (() => {
+			const raw = (editor as Partial<ProjectEditorState & { watermark: WatermarkSettings }>).watermark;
+			if (!raw || typeof raw !== "object") return { ...DEFAULT_WATERMARK_SETTINGS };
+			return {
+				enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_WATERMARK_SETTINGS.enabled,
+				type: raw.type === "text" || raw.type === "image" ? raw.type : DEFAULT_WATERMARK_SETTINGS.type,
+				text: typeof raw.text === "string" ? raw.text : DEFAULT_WATERMARK_SETTINGS.text,
+				imageDataUrl: typeof raw.imageDataUrl === "string" ? raw.imageDataUrl : null,
+				position:
+					raw.position === "top-left" || raw.position === "top-center" || raw.position === "top-right" ||
+					raw.position === "center-left" || raw.position === "center" || raw.position === "center-right" ||
+					raw.position === "bottom-left" || raw.position === "bottom-center" || raw.position === "bottom-right" ||
+					raw.position === "custom"
+						? raw.position
+						: DEFAULT_WATERMARK_SETTINGS.position,
+				positionX: isFiniteNumber(raw.positionX) ? clamp(raw.positionX, 0, 1) : DEFAULT_WATERMARK_SETTINGS.positionX,
+				positionY: isFiniteNumber(raw.positionY) ? clamp(raw.positionY, 0, 1) : DEFAULT_WATERMARK_SETTINGS.positionY,
+				scale: isFiniteNumber(raw.scale) ? clamp(raw.scale, 0.1, 3) : DEFAULT_WATERMARK_SETTINGS.scale,
+				opacity: isFiniteNumber(raw.opacity) ? clamp(raw.opacity, 0, 1) : DEFAULT_WATERMARK_SETTINGS.opacity,
+				fontSize: isFiniteNumber(raw.fontSize) ? clamp(raw.fontSize, 8, 120) : DEFAULT_WATERMARK_SETTINGS.fontSize,
+				color: typeof raw.color === "string" && raw.color.trim() ? raw.color : DEFAULT_WATERMARK_SETTINGS.color,
+				fontFamily: typeof raw.fontFamily === "string" && raw.fontFamily.trim() ? raw.fontFamily : DEFAULT_WATERMARK_SETTINGS.fontFamily,
+				animationStyle:
+					raw.animationStyle === "none" || raw.animationStyle === "pulse" || raw.animationStyle === "fade-in-out"
+						? raw.animationStyle
+						: DEFAULT_WATERMARK_SETTINGS.animationStyle,
+				padding: isFiniteNumber(raw.padding) ? clamp(raw.padding, 0, 200) : DEFAULT_WATERMARK_SETTINGS.padding,
+			} satisfies WatermarkSettings;
+		})(),
 	};
 }
 

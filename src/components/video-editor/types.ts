@@ -14,6 +14,8 @@ export interface ZoomRegion {
 	depth: ZoomDepth;
 	focus: ZoomFocus;
 	mode?: ZoomMode;
+	/** When true, this zoom applies to the webcam feed (camera zoom), not the screen. */
+	isCameraZoom?: boolean;
 }
 
 export interface CursorTelemetryPoint {
@@ -81,6 +83,15 @@ export type WebcamPositionPreset =
 	| "bottom-center"
 	| "custom";
 
+/**
+ * How the webcam is composited onto the canvas.
+ * - "overlay": floating bubble (legacy default)
+ * - "dock-bottom": webcam fills a full-width band at the bottom; screen recording
+ *   is pushed into the top portion and can be masked with a rounded rect.
+ * - "dock-bottom-portrait": same as dock-bottom but tuned for 9:16 aspect ratio
+ */
+export type WebcamLayoutMode = "overlay" | "dock-bottom" | "dock-bottom-portrait";
+
 export interface WebcamOverlaySettings {
 	enabled: boolean;
 	sourcePath: string | null;
@@ -97,6 +108,25 @@ export interface WebcamOverlaySettings {
 	shadow: number;
 	margin: number;
 	morphFrames?: WebcamMorphFrame[];
+	/** Layout mode — controls how webcam and screen are composited. Default: "overlay" */
+	layoutMode?: WebcamLayoutMode;
+	/**
+	 * For dock-bottom layouts: fraction of canvas height the webcam section occupies (0–1).
+	 * Default: 0.38 for landscape, 0.45 for portrait.
+	 */
+	dockHeightFraction?: number;
+	/**
+	 * Corner radius (px at 1920 base width) applied to the screen recording mask
+	 * when using dock-bottom layouts. 0 = no mask. Default: 0.
+	 */
+	screenMaskRadius?: number;
+	/**
+	 * Per-layout-preset crop regions. Keyed by LayoutPresetId so each layout
+	 * remembers its own webcam crop independently.
+	 */
+	cropRegionByPreset?: Record<string, CropRegion>;
+	/** The currently active layout preset id (used to look up cropRegionByPreset). */
+	activePresetId?: string;
 }
 
 export interface WebcamMorphFrame {
@@ -108,14 +138,19 @@ export interface WebcamMorphFrame {
 	cornerRadius: number;
 	margin: number;
 	shadow: number;
+	/** When true the webcam fills the full screen (size=100, cornerRadius=0). */
+	fullscreen?: boolean;
 }
 
 export const DEFAULT_CURSOR_SIZE = 3.0;
-export const DEFAULT_CURSOR_SMOOTHING = 0.67;
+export const DEFAULT_CURSOR_SMOOTHING = 0.0;
 export const DEFAULT_CURSOR_MOTION_BLUR = 0.4;
 export const DEFAULT_CURSOR_CLICK_BOUNCE = 2.5;
 export const DEFAULT_CURSOR_CLICK_BOUNCE_DURATION = 350;
 export const DEFAULT_CURSOR_SWAY = 0.4;
+export const DEFAULT_CURSOR_AUTO_HIDE = false;
+export const DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS = 1500;
+export const DEFAULT_CURSOR_OFFSET_MS = 0;
 export const DEFAULT_ZOOM_SMOOTHNESS = 0.5;
 export const DEFAULT_ZOOM_MOTION_BLUR = 0.35;
 export interface ZoomMotionBlurTuning {
@@ -179,6 +214,18 @@ export interface TrimRegion {
 	endMs: number;
 }
 
+/**
+ * A layout keyframe region — stores which webcam layout preset is active
+ * during a time range. Rendered on the LAYOUT timeline row.
+ */
+export interface LayoutRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	/** The LayoutPresetId to apply during this time range. */
+	presetId: string;
+}
+
 export interface ClipRegion {
 	id: string;
 	startMs: number;
@@ -186,6 +233,13 @@ export interface ClipRegion {
 	speed: number;
 	muted?: boolean;
 	showSourceAudio?: boolean;
+	/**
+	 * The offset into the source audio file (in ms) where this clip begins.
+	 * For the original unsplit clip this is 0. After a split, the right-hand
+	 * piece carries the accumulated offset so the waveform renderer can show
+	 * the correct section of the audio file.
+	 */
+	sourceStartMs?: number;
 }
 
 export function getClipSourceEndMs(clip: ClipRegion): number {
