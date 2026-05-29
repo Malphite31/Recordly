@@ -210,7 +210,7 @@ export default function Item({
 							segmentEndMs={waveformSegmentSpan?.end ?? span.end}
 							gain={waveformGain}
 							normalize={waveformNormalize}
-							className="absolute inset-0 w-full h-full pointer-events-none opacity-45"
+							className="absolute inset-0 w-full h-full pointer-events-none opacity-70"
 						/>
 					)}
 					{/* Muted overlay for source audio track items */}

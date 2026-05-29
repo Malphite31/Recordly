@@ -290,6 +290,13 @@ export function useTimelineEditorRuntime({
 			splitClip: handleSplitClip,
 			addAnnotation: handleAddAnnotation,
 			addAudio: handleAddAudio,
+			addLayout: () => {
+				// Layout addition is handled via onLayoutAdded prop in VideoEditor
+			},
+			addCameraZoom: () => {
+				// Camera zoom addition is handled via onZoomAdded prop in VideoEditor
+				handleAddZoom();
+			},
 			keyframes,
 		}),
 		[handleAddAnnotation, handleAddAudio, handleAddZoom, handleSuggestZooms, handleSplitClip, keyframes],

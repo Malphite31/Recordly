@@ -59,6 +59,10 @@ export function useAudioPreviewSync({
     [resolvedPlan],
   );
 
+  const isPlayingRef = useRef(isPlaying);
+  const timelineTimeRef = useRef(timelineTime);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { timelineTimeRef.current = timelineTime; }, [timelineTime]);
   const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const audioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
   const audioElementResourcesRef = useRef<Map<string, string>>(new Map());
@@ -106,7 +110,15 @@ export function useAudioPreviewSync({
       if (!audio.src) continue;
       audio.play().catch(() => undefined);
     }
-  }, [ensureSourceAudioRunning]);
+    // Also trigger user audio elements that are currently in-region
+    for (const [id, audio] of audioElementsRef.current.entries()) {
+      if (!audio.src) continue;
+      const track = resolvedUserTracks.find((t) => t.id === id);
+      if (!track) continue;
+      // We don't know currentTime here, so just ensure they're ready to play
+      // The sync effect will handle actual play/pause based on position
+    }
+  }, [ensureSourceAudioRunning, resolvedUserTracks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +166,17 @@ export function useAudioPreviewSync({
 
           audioElementRevokersRef.current.set(track.id, resolved.revoke);
           latestAudio.src = resolved.src;
+          // If already playing and in-region, start playback immediately
+          if (isPlayingRef.current) {
+            const currentTimeMs = timelineTimeRef.current * 1000;
+            const startMs = track.timelineBinding.startMs;
+            const endMs = track.timelineBinding.endMs;
+            if (currentTimeMs >= startMs && currentTimeMs < endMs) {
+              const audioOffset = (currentTimeMs - startMs) / 1000;
+              latestAudio.currentTime = audioOffset;
+              latestAudio.play().catch(() => undefined);
+            }
+          }
         })();
       }
 
@@ -225,8 +248,19 @@ export function useAudioPreviewSync({
             sourceAudioElementRevokersRef.current.set(audioPath, resolved.revoke);
             latestAudio.src = resolved.src;
             latestAudio.load();
-            if (isPlaying) {
-              playSourceAudioPreview();
+            if (isPlayingRef.current) {
+              // Wait for the element to be ready before playing
+              const tryPlay = () => {
+                void ensureSourceAudioRunning().then(() => {
+                  if (!latestAudio.paused) return;
+                  latestAudio.play().catch(() => undefined);
+                });
+              };
+              if (latestAudio.readyState >= 2) {
+                tryPlay();
+              } else {
+                latestAudio.addEventListener("canplay", tryPlay, { once: true });
+              }
             }
           } catch (error) {
             if (cancelled) {
@@ -264,12 +298,11 @@ export function useAudioPreviewSync({
     };
   }, [
     getSourceTrackPreviewGain,
-    isPlaying,
     isCurrentClipMuted,
     onSourceFallbackLoadError,
     resolvedSourceTracks,
     previewVolume,
-    playSourceAudioPreview,
+    ensureSourceAudioRunning,
   ]);
 
   useEffect(() => {
@@ -333,7 +366,14 @@ export function useAudioPreviewSync({
 
       if (isPlaying && isInRegion) {
         enablePitchPreservingPlayback(audio);
-        const audioOffset = (currentTimeMs - startMs) / 1000;
+        const rawAudioOffset = (currentTimeMs - startMs) / 1000;
+        // Clamp to the file's actual duration so we don't seek past the end
+        const audioDuration = Number.isFinite(audio.duration) ? audio.duration : null;
+        const audioOffset = audioDuration !== null ? Math.min(rawAudioOffset, audioDuration - 0.05) : rawAudioOffset;
+        if (audioOffset < 0) {
+          if (!audio.paused) audio.pause();
+          continue;
+        }
         if (Math.abs(audio.currentTime - audioOffset) > 0.2) {
           audio.currentTime = audioOffset;
         }
@@ -418,7 +458,7 @@ export function useAudioPreviewSync({
         audio.playbackRate = syncedPlaybackRate;
       }
 
-      const atEnd = audioDuration !== null && targetTime >= audioDuration;
+      const atEnd = audioDuration !== null && targetTime >= audioDuration - 0.05;
       if (isPlaying && !beforeAudioStart && !atEnd) {
         void ensureSourceAudioRunning().then(() => {
           audio.play().catch(() => undefined);

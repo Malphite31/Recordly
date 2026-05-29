@@ -89,10 +89,6 @@ export interface CursorRenderConfig {
 	sway: number;
 	/** Cursor visual style. */
 	style: CursorStyle;
-	/** Auto-hide cursor after no movement. */
-	autoHide: boolean;
-	/** Delay in ms before cursor starts fading when idle. */
-	autoHideDelayMs: number;
 }
 
 export const DEFAULT_CURSOR_CONFIG: CursorRenderConfig = {
@@ -111,8 +107,6 @@ export const DEFAULT_CURSOR_CONFIG: CursorRenderConfig = {
 	clickBounceDuration: DEFAULT_CURSOR_CLICK_BOUNCE_DURATION,
 	sway: 0,
 	style: DEFAULT_CURSOR_STYLE,
-	autoHide: false,
-	autoHideDelayMs: 1500,
 };
 
 const REFERENCE_WIDTH = 1920;
@@ -854,17 +848,6 @@ export class SmoothedCursorState {
 			this.lastTimeMs === null ? 1000 / 60 : Math.max(1, timeMs - this.lastTimeMs);
 		this.lastTimeMs = timeMs;
 
-		// Velocity-adaptive smoothing: when the cursor moves very fast (large
-		// displacement per ms), snap directly to the target so fast movements
-		// aren't cut or lagged. The threshold is ~0.5% of screen width per ms
-		// which corresponds to crossing the full screen in ~200ms.
-		const displacement = Math.hypot(targetX - this.x, targetY - this.y);
-		const velocityPerMs = displacement / Math.max(1, deltaMs);
-		if (velocityPerMs > 0.005) {
-			this.snapTo(targetX, targetY, timeMs);
-			return;
-		}
-
 		const springConfig = getCursorSpringConfig(this.smoothingFactor, this.springTuning);
 		this.x = stepSpringValue(this.xSpring, targetX, deltaMs, springConfig);
 		this.y = stepSpringValue(this.ySpring, targetY, deltaMs, springConfig);
@@ -917,11 +900,6 @@ export class PixiCursorOverlay {
 	private lastRenderedTimeMs: number | null = null;
 	private swayRotation = 0;
 	private swaySpring = createSpringState(0);
-	/** Telemetry time of the last cursor movement — used for auto-hide. */
-	private lastMovedTimeMs: number | null = null;
-	/** Last known cursor position for movement detection. */
-	private lastMovedCx: number | null = null;
-	private lastMovedCy: number | null = null;
 
 	constructor(config: Partial<CursorRenderConfig> = {}) {
 		this.config = {
@@ -1033,14 +1011,6 @@ export class PixiCursorOverlay {
 		this.config.sway = clamp(sway, 0, 2);
 	}
 
-	setAutoHide(autoHide: boolean) {
-		this.config.autoHide = autoHide;
-	}
-
-	setAutoHideDelayMs(delayMs: number) {
-		this.config.autoHideDelayMs = Math.max(200, Math.min(10000, delayMs));
-	}
-
 	setStyle(style: CursorStyle) {
 		this.config.style = style;
 		if (isStatefulCursorStyle(style)) {
@@ -1124,21 +1094,7 @@ export class PixiCursorOverlay {
 		const hasTimeDiscontinuity =
 			this.lastRenderedTimeMs !== null &&
 			Math.abs(timeMs - this.lastRenderedTimeMs) > CURSOR_TIME_DISCONTINUITY_MS;
-
-		// Snap the cursor to the exact click position so the click ring and bounce
-		// appear at the right spot rather than the spring-lagged position.
-		// Only snap for 1 frame (16ms) — just enough to place the cursor at the
-		// click point without cutting subsequent fast movements.
-		const latestInteraction = findLatestInteractionSample(samples, timeMs);
-		const isActiveClick =
-			latestInteraction !== null &&
-			(latestInteraction.interactionType === "click" ||
-				latestInteraction.interactionType === "double-click" ||
-				latestInteraction.interactionType === "right-click" ||
-				latestInteraction.interactionType === "middle-click") &&
-			timeMs - latestInteraction.timeMs <= 16;
-
-		const shouldFreezeCursorMotion = freeze || hasTimeDiscontinuity || isActiveClick;
+		const shouldFreezeCursorMotion = freeze || hasTimeDiscontinuity;
 
 		if (shouldFreezeCursorMotion) {
 			if (!sameFrameTime || !this.lastRenderedPoint) {
@@ -1148,39 +1104,6 @@ export class PixiCursorOverlay {
 			this.state.update(projectedTarget.cx, projectedTarget.cy, timeMs);
 		}
 		this.container.visible = true;
-
-		// ── Auto-hide: track last movement time and compute idle fade/shrink ──
-		const MOVEMENT_THRESHOLD = 0.002; // ~0.2% of screen width
-		const cx = projectedTarget.cx;
-		const cy = projectedTarget.cy;
-		const hasMoved =
-			this.lastMovedCx === null ||
-			this.lastMovedCy === null ||
-			Math.hypot(cx - this.lastMovedCx, cy - this.lastMovedCy) > MOVEMENT_THRESHOLD;
-
-		if (hasMoved || isActiveClick) {
-			this.lastMovedTimeMs = timeMs;
-			this.lastMovedCx = cx;
-			this.lastMovedCy = cy;
-		}
-
-		// Compute auto-hide alpha and scale multiplier
-		let autoHideAlpha = 1;
-		let autoHideScale = 1;
-		if (this.config.autoHide && this.lastMovedTimeMs !== null) {
-			const idleMs = timeMs - this.lastMovedTimeMs;
-			const delayMs = this.config.autoHideDelayMs;
-			const FADE_DURATION_MS = 400; // how long the fade-out takes
-			if (idleMs > delayMs) {
-				const fadeProgress = Math.min(1, (idleMs - delayMs) / FADE_DURATION_MS);
-				// Ease-in-out for smooth fade
-				const eased = fadeProgress < 0.5
-					? 2 * fadeProgress * fadeProgress
-					: 1 - Math.pow(-2 * fadeProgress + 2, 2) / 2;
-				autoHideAlpha = 1 - eased;
-				autoHideScale = 1 - eased * 0.4; // shrink to 60% at full hide
-			}
-		}
 
 		const px = viewport.x + this.state.x * viewport.width;
 		const py = viewport.y + this.state.y * viewport.height;
@@ -1194,11 +1117,8 @@ export class PixiCursorOverlay {
 			0.72,
 			1 - Math.sin(clickBounceProgress * Math.PI) * (0.08 * this.config.clickBounce),
 		);
-		const scaledH = h * getCursorStyleSizeMultiplier(this.config.style) * autoHideScale;
+		const scaledH = h * getCursorStyleSizeMultiplier(this.config.style);
 		const swayRotation = this.updateCursorSway(px, py, timeMs, shouldFreezeCursorMotion);
-
-		// Apply auto-hide alpha to the whole container
-		this.container.alpha = autoHideAlpha;
 
 		this.clickRingGraphics.clear();
 
@@ -1356,12 +1276,8 @@ export class PixiCursorOverlay {
 		this.customCursorSprite.visible = false;
 		this.customCursorSprite.scale.set(1);
 		this.container.visible = false;
-		this.container.alpha = 1;
 		this.lastRenderedPoint = null;
 		this.lastRenderedTimeMs = null;
-		this.lastMovedTimeMs = null;
-		this.lastMovedCx = null;
-		this.lastMovedCy = null;
 		this.swayRotation = 0;
 		resetSpringState(this.swaySpring, 0);
 		this.cursorMotionBlurFilter.velocity = { x: 0, y: 0 };

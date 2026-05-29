@@ -9,7 +9,6 @@ import {
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import minimalCursorUrl from "@/assets/cursors/custom/minimal-cursor.svg";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -41,11 +40,11 @@ import {
 	isVideoWallpaperSource,
 } from "@/lib/wallpapers";
 import { type AspectRatio } from "@/utils/aspectRatioUtils";
+import minimalCursorUrl from "@/assets/cursors/custom/minimal-cursor.svg";
 import { useI18n, useScopedT } from "../../contexts/I18nContext";
 import type { AppLocale } from "../../i18n/config";
 import { SUPPORTED_LOCALES } from "../../i18n/config";
 import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
-import { LayoutPresetsPanel, updateWebcamCropForActivePreset } from "./LayoutPresetsPanel";
 import {
 	CURSOR_MOTION_PRESETS,
 	type CursorMotionPresetId,
@@ -81,8 +80,6 @@ import {
 	DEFAULT_CURSOR_SIZE,
 	DEFAULT_CURSOR_STYLE,
 	DEFAULT_CURSOR_SWAY,
-	DEFAULT_CURSOR_AUTO_HIDE,
-	DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS,
 	DEFAULT_PADDING,
 	DEFAULT_WEBCAM_CORNER_RADIUS,
 	DEFAULT_WEBCAM_MARGIN,
@@ -112,7 +109,6 @@ import {
 const tahoeCursorUrl = cursorSetAssets.tahoe.arrow.url;
 const BUILTIN_CURSOR_PREVIEW_SIZE = 28;
 const BUILTIN_CURSOR_PREVIEW_FRAME_SIZE = 48;
-const WEBCAM_ROUNDNESS_MAX = 540;
 
 function getStepPrecision(step: number): number {
 	if (!Number.isFinite(step) || step <= 0) return 0;
@@ -281,11 +277,7 @@ function ExtensionSettingsSection({
 						<div key={field.id} className="mt-1">
 							<SliderControl
 								label={field.label}
-								value={
-									typeof value === "number"
-										? value
-										: (field.defaultValue as number)
-								}
+								value={typeof value === "number" ? value : (field.defaultValue as number)}
 								defaultValue={field.defaultValue as number}
 								min={field.min ?? 0}
 								max={field.max ?? 1}
@@ -548,12 +540,6 @@ interface SettingsPanelProps {
 	onCursorClickBounceDurationChange?: (duration: number) => void;
 	cursorSway?: number;
 	onCursorSwayChange?: (amount: number) => void;
-	cursorAutoHide?: boolean;
-	onCursorAutoHideChange?: (enabled: boolean) => void;
-	cursorAutoHideDelayMs?: number;
-	onCursorAutoHideDelayMsChange?: (delayMs: number) => void;
-	cursorOffsetMs?: number;
-	onCursorOffsetMsChange?: (offsetMs: number) => void;
 	borderRadius?: number;
 	onBorderRadiusChange?: (radius: number) => void;
 	webcam?: WebcamOverlaySettings;
@@ -562,13 +548,6 @@ interface SettingsPanelProps {
 	webcamPreviewPlaying?: boolean;
 	onWebcamChange?: (webcam: WebcamOverlaySettings) => void;
 	onUploadWebcam?: () => void;
-	onWebcamPresetApplied?: () => void;
-	/** Live screen recording video element for layout thumbnails. */
-	screenVideoEl?: HTMLVideoElement | null;
-	/** Live webcam video element for layout thumbnails. */
-	webcamVideoEl?: HTMLVideoElement | null;
-	/** Current playback time for thumbnail redraws. */
-	previewCurrentTimeForThumbnails?: number;
 	onClearWebcam?: () => void;
 	padding?: Padding;
 	onPaddingChange?: (padding: Padding) => void;
@@ -946,12 +925,6 @@ export function SettingsPanel({
 	onCursorClickBounceDurationChange,
 	cursorSway = DEFAULT_CURSOR_SWAY,
 	onCursorSwayChange,
-	cursorAutoHide = DEFAULT_CURSOR_AUTO_HIDE,
-	onCursorAutoHideChange,
-	cursorAutoHideDelayMs = DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS,
-	onCursorAutoHideDelayMsChange,
-	cursorOffsetMs = 0,
-	onCursorOffsetMsChange,
 	borderRadius = 12.5,
 	onBorderRadiusChange,
 	webcam,
@@ -960,10 +933,6 @@ export function SettingsPanel({
 	webcamPreviewPlaying = false,
 	onWebcamChange,
 	onUploadWebcam,
-	onWebcamPresetApplied,
-	screenVideoEl,
-	webcamVideoEl,
-	previewCurrentTimeForThumbnails = 0,
 	onClearWebcam,
 	padding = DEFAULT_PADDING,
 	onPaddingChange,
@@ -1272,7 +1241,12 @@ export function SettingsPanel({
 		if (!isKnownWallpaper && isVideoWallpaperSource(selected)) {
 			setCustomImages((prev) => (prev.includes(selected) ? prev : [selected, ...prev]));
 		}
-	}, [builtInWallpaperPaths, extensionWallpaperPaths, selected, wallpaperPreviewPaths]);
+	}, [
+		builtInWallpaperPaths,
+		extensionWallpaperPaths,
+		selected,
+		wallpaperPreviewPaths,
+	]);
 
 	const imageWallpaperTiles = useMemo<WallpaperTile[]>(() => {
 		const imageWallpapers = builtInWallpapers.filter(
@@ -2947,22 +2921,6 @@ export function SettingsPanel({
 
 		const sceneSectionContent = (
 			<div className="space-y-4">
-				{/* Layout Presets (includes Format section) */}
-				{webcam !== undefined && onWebcamChange !== undefined && (
-					<section className="flex flex-col gap-2">
-						<LayoutPresetsPanel
-							webcam={webcam}
-							onWebcamChange={onWebcamChange}
-							hasWebcam={Boolean(webcam?.sourcePath)}
-							aspectRatio={aspectRatio}
-							onAspectRatioChange={onAspectRatioChange}
-							onPresetApplied={onWebcamPresetApplied}
-							screenVideoEl={screenVideoEl}
-							webcamVideoEl={webcamVideoEl}
-							currentTime={previewCurrentTimeForThumbnails}
-						/>
-					</section>
-				)}
 				{backgroundSettingsContent}
 				{frameSectionContent}
 				{cropSectionContent}
@@ -3111,8 +3069,8 @@ export function SettingsPanel({
 			</section>
 		);
 
-		const audioSectionContent = (
-			<section className="flex flex-col gap-3">
+			const audioSectionContent = (
+				<section className="flex flex-col gap-3">
 				<div className="flex items-center justify-between gap-3">
 					<SectionLabel>{tSettings("audio.volumeTitle", "Audio")}</SectionLabel>
 					<button
@@ -3126,8 +3084,8 @@ export function SettingsPanel({
 						{t("common.actions.reset", "Reset")}
 					</button>
 				</div>
-				<SliderControl
-					label={tSettings("audio.volume", "Volume")}
+					<SliderControl
+						label={tSettings("audio.volume", "Volume")}
 					value={selectedAudioVolume ?? 1}
 					defaultValue={1}
 					min={0}
@@ -3135,20 +3093,20 @@ export function SettingsPanel({
 					step={0.01}
 					onChange={(v) => onAudioVolumeChange?.(v)}
 					formatValue={(v) => `${Math.round(v * 100)}%`}
-					parseInput={(text) => parseFloat(text.replace(/%$/, "")) / 100}
-				/>
-				<div className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
-					<span className="text-[10px] text-muted-foreground">
-						{tSettings("audio.normalize", "Normalize")}
-					</span>
-					<Switch
-						checked={Boolean(selectedAudioNormalize)}
-						onCheckedChange={(v) => onAudioNormalizeChange?.(v)}
-						className="data-[state=checked]:bg-[#2563EB] scale-75"
+						parseInput={(text) => parseFloat(text.replace(/%$/, "")) / 100}
 					/>
-				</div>
-			</section>
-		);
+					<div className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
+						<span className="text-[10px] text-muted-foreground">
+							{tSettings("audio.normalize", "Normalize")}
+						</span>
+						<Switch
+							checked={Boolean(selectedAudioNormalize)}
+							onCheckedChange={(v) => onAudioNormalizeChange?.(v)}
+							className="data-[state=checked]:bg-[#2563EB] scale-75"
+						/>
+					</div>
+				</section>
+			);
 
 		const clipSectionContent = (
 			<section className="flex flex-col gap-2">
@@ -3225,10 +3183,7 @@ export function SettingsPanel({
 					{hasClipSourceAudio && (
 						<div className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
 							<span className="text-[10px] text-muted-foreground">
-								{tSettings(
-									"clip.separateClipFromAudio",
-									"Separate clip from audio",
-								)}
+								{tSettings("clip.separateClipFromAudio", "Separate clip from audio")}
 							</span>
 							<Switch
 								checked={selectedClipShowSourceAudio ?? false}
@@ -3239,68 +3194,65 @@ export function SettingsPanel({
 					)}
 				</div>
 
-				{selectedClipId && hasClipSourceAudio && sourceAudioTrackMeta.length > 0 && (
-					<div className="mt-1 flex flex-col gap-3">
-						{sourceAudioTrackMeta.map((track) => {
-							const settings = sourceAudioTrackSettings[track.id] ?? {
-								volume: 1,
-								normalize: false,
-							};
-							return (
-								<div
-									key={track.id}
-									className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2"
-								>
-									<div className="mb-2 flex items-center justify-between">
-										<span className="text-[11px] font-medium text-foreground">
-											{track.label}
-										</span>
-										<button
-											type="button"
-											onClick={() => {
-												onSourceAudioTrackVolumeChange?.(track.id, 1);
-												onSourceAudioTrackNormalizeChange?.(
-													track.id,
-													false,
-												);
-											}}
-											className="text-[10px] text-[#2563EB] transition-opacity hover:opacity-80"
-										>
-											{t("common.actions.reset", "Reset")}
-										</button>
-									</div>
-									<div className="mb-2 flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
-										<span className="text-[10px] text-muted-foreground">
-											{tSettings("audio.normalize", "Normalize")}
-										</span>
-										<Switch
-											checked={settings.normalize}
-											onCheckedChange={(v) =>
-												onSourceAudioTrackNormalizeChange?.(track.id, v)
+				{selectedClipId &&
+					hasClipSourceAudio &&
+					sourceAudioTrackMeta.length > 0 && (
+						<div className="mt-1 flex flex-col gap-3">
+							{sourceAudioTrackMeta.map((track) => {
+								const settings = sourceAudioTrackSettings[track.id] ?? {
+									volume: 1,
+									normalize: false,
+								};
+								return (
+									<div
+										key={track.id}
+										className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2"
+									>
+										<div className="mb-2 flex items-center justify-between">
+											<span className="text-[11px] font-medium text-foreground">
+												{track.label}
+											</span>
+											<button
+												type="button"
+												onClick={() => {
+													onSourceAudioTrackVolumeChange?.(track.id, 1);
+													onSourceAudioTrackNormalizeChange?.(track.id, false);
+												}}
+												className="text-[10px] text-[#2563EB] transition-opacity hover:opacity-80"
+											>
+												{t("common.actions.reset", "Reset")}
+											</button>
+										</div>
+										<div className="mb-2 flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
+											<span className="text-[10px] text-muted-foreground">
+												{tSettings("audio.normalize", "Normalize")}
+											</span>
+											<Switch
+												checked={settings.normalize}
+												onCheckedChange={(v) =>
+													onSourceAudioTrackNormalizeChange?.(track.id, v)
+												}
+												className="data-[state=checked]:bg-[#06b6d4] scale-75"
+											/>
+										</div>
+										<SliderControl
+											label={tSettings("audio.volume", "Volume")}
+											value={settings.volume}
+											defaultValue={1}
+											min={0}
+											max={1}
+											step={0.01}
+											onChange={(v) => onSourceAudioTrackVolumeChange?.(track.id, v)}
+											formatValue={(v) => `${Math.round(v * 100)}%`}
+											parseInput={(text) =>
+												parseFloat(text.replace(/%$/, "")) / 100
 											}
-											className="data-[state=checked]:bg-[#06b6d4] scale-75"
 										/>
 									</div>
-									<SliderControl
-										label={tSettings("audio.volume", "Volume")}
-										value={settings.volume}
-										defaultValue={1}
-										min={0}
-										max={1}
-										step={0.01}
-										onChange={(v) =>
-											onSourceAudioTrackVolumeChange?.(track.id, v)
-										}
-										formatValue={(v) => `${Math.round(v * 100)}%`}
-										parseInput={(text) =>
-											parseFloat(text.replace(/%$/, "")) / 100
-										}
-									/>
-								</div>
-							);
-						})}
-					</div>
-				)}
+								);
+							})}
+						</div>
+					)}
 			</section>
 		);
 
@@ -3466,44 +3418,6 @@ export function SettingsPanel({
 									return parseFloat(text.replace(/×$/, ""));
 								}}
 							/>
-							{/* Auto-hide cursor */}
-							<div className="flex items-center justify-between gap-2 py-0.5">
-								<span className="text-[11px] text-muted-foreground">
-									{tSettings("effects.cursorAutoHide", "Auto-hide when idle")}
-								</span>
-								<Switch
-									checked={cursorAutoHide ?? false}
-									onCheckedChange={(v) => onCursorAutoHideChange?.(v)}
-								/>
-							</div>
-							{cursorAutoHide && (
-								<SliderControl
-									label={tSettings("effects.cursorAutoHideDelay", "Hide delay")}
-									value={cursorAutoHideDelayMs ?? 1500}
-									defaultValue={1500}
-									min={300}
-									max={5000}
-									step={100}
-									onChange={(v) => onCursorAutoHideDelayMsChange?.(v)}
-									formatValue={(v) => `${(v / 1000).toFixed(1)}s`}
-									parseInput={(text) => parseFloat(text.replace(/s$/, "")) * 1000}
-								/>
-							)}
-							{/* Cursor timing offset — manual correction for cursor/video sync */}
-							<SliderControl
-								label={tSettings("effects.cursorOffset", "Timing offset")}
-								value={cursorOffsetMs ?? 0}
-								defaultValue={0}
-								min={-3000}
-								max={3000}
-								step={50}
-								onChange={(v) => onCursorOffsetMsChange?.(v)}
-								formatValue={(v) => {
-									if (v === 0) return "0ms";
-									return `${v > 0 ? "+" : ""}${v}ms`;
-								}}
-								parseInput={(text) => parseFloat(text.replace(/ms$/, ""))}
-							/>
 							{showDevMotionControls ? (
 								<div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
 									<div className="text-[10px] text-muted-foreground">
@@ -3573,6 +3487,31 @@ export function SettingsPanel({
 								formatValue={(v) => `${Math.round(v)}%`}
 								parseInput={(text) => parseFloat(text.replace(/%$/, ""))}
 							/>
+							<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
+								<div className="mb-2 flex items-center justify-between gap-2">
+									<div className="text-[10px] text-muted-foreground">
+										{tSettings("effects.webcamCrop", "Crop")}
+									</div>
+									<button
+										type="button"
+										onClick={() =>
+											updateWebcam({ cropRegion: DEFAULT_CROP_REGION })
+										}
+										className="text-[10px] text-[#2563EB] transition-opacity hover:opacity-80"
+									>
+										{t("common.actions.reset", "Reset")}
+									</button>
+								</div>
+								<WebcamCropControl
+									cropRegion={webcamCrop}
+									mirrored={webcam?.mirror ?? true}
+									previewSrc={webcamPreviewSrc}
+									previewCurrentTime={webcamPreviewCurrentTime}
+									previewPlaying={webcamPreviewPlaying}
+									previewTimeOffsetMs={webcam?.timeOffsetMs}
+									onCropChange={(cropRegion) => updateWebcam({ cropRegion })}
+								/>
+							</div>
 							<div className="rounded-lg bg-foreground/[0.03] px-2.5 py-2">
 								<div className="mb-2 text-[10px] text-muted-foreground">
 									{tSettings("effects.webcamPosition", "Position")}
@@ -3669,7 +3608,7 @@ export function SettingsPanel({
 								value={webcam?.cornerRadius ?? DEFAULT_WEBCAM_CORNER_RADIUS}
 								defaultValue={DEFAULT_WEBCAM_CORNER_RADIUS}
 								min={0}
-								max={WEBCAM_ROUNDNESS_MAX}
+								max={160}
 								step={1}
 								onChange={(v) => updateWebcam({ cornerRadius: v })}
 								formatValue={(v) => `${Math.round(v)}px`}

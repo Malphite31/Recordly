@@ -6,6 +6,8 @@ import {
 	MicrophoneSlashIcon,
 	MinusIcon,
 	MonitorIcon,
+	SpeakerHighIcon,
+	SpeakerXIcon,
 	TimerIcon,
 	VideoCameraIcon,
 	VideoCameraSlashIcon,
@@ -188,8 +190,30 @@ function LaunchWindowContent() {
 	useEffect(() => {
 		let mounted = true;
 
-		void window.electronAPI.getSelectedSource().then((source) => {
-			if (mounted) syncSelectedSource(source);
+		void window.electronAPI.getSelectedSource().then(async (source) => {
+			if (!mounted) return;
+			if (source?.name) {
+				syncSelectedSource(source);
+				return;
+			}
+			// No source selected yet — auto-select the primary display
+			try {
+				const sources = await window.electronAPI.getSources({
+					types: ["screen"],
+					thumbnailSize: { width: 0, height: 0 },
+				});
+				if (!mounted) return;
+				const primary =
+					sources.find((s: { name?: string }) => s.name?.includes("(Primary)")) ??
+					sources.find((s: { sourceType?: string }) => s.sourceType === "screen") ??
+					sources[0];
+				if (primary) {
+					await window.electronAPI.selectSource(primary);
+					syncSelectedSource(primary);
+				}
+			} catch {
+				// Fallback: leave unselected, user picks manually
+			}
 		});
 
 		const cleanup = window.electronAPI.onSelectedSourceChanged((source) => {
@@ -256,9 +280,6 @@ function LaunchWindowContent() {
 
 			<MicPopover
 				disabled={recording}
-				systemAudioEnabled={systemAudioEnabled}
-				systemAudioStatus={systemAudioStatus}
-				onToggleSystemAudio={() => setSystemAudioEnabled(!systemAudioEnabled)}
 				microphoneEnabled={microphoneEnabled}
 				onDisableMicrophone={() => setMicrophoneEnabled(false)}
 				devices={devices}
@@ -289,6 +310,34 @@ function LaunchWindowContent() {
 					</Button>
 				}
 			/>
+
+			<Button
+				variant="ghost"
+				size="icon"
+				iconSize="lg"
+				disabled={recording}
+				title={
+					systemAudioStatus === "unavailable"
+						? t("recording.systemAudioUnavailable", "System audio unavailable for this source")
+						: systemAudioEnabled
+							? t("recording.disableSystemAudio", "Disable system audio")
+							: t("recording.enableSystemAudio", "Enable system audio")
+				}
+				className={
+					systemAudioEnabled && systemAudioStatus !== "unavailable"
+						? styles.ibActive
+						: systemAudioStatus === "unavailable"
+							? "opacity-40"
+							: ""
+				}
+				onClick={() => setSystemAudioEnabled(!systemAudioEnabled)}
+			>
+				{systemAudioEnabled ? (
+					<SpeakerHighIcon size={18} />
+				) : (
+					<SpeakerXIcon size={18} />
+				)}
+			</Button>
 
 			<WebcamPopover
 				disabled={recording}
@@ -521,33 +570,33 @@ function LaunchWindowContent() {
 								</div>
 							</motion.div>
 						</div>
-						{showRecordingWebcamPreview && (
-							<div
-								ref={recordingWebcamPreviewContainerRef}
-								className={`${styles.recordingWebcamPreview} ${styles.electronNoDrag} pointer-events-auto`}
-								data-hud-interactive
-								title={t("recording.webcam")}
-								style={{
-									transform: `translate(${webcamPreviewOffset.x}px, ${webcamPreviewOffset.y}px)`,
-								}}
-								onMouseEnter={handleHudMouseEnter}
-								onMouseLeave={handleHudMouseLeave}
-								onPointerDown={handleWebcamPreviewPointerDown}
-								onPointerMove={handleWebcamPreviewPointerMove}
-								onPointerUp={handleWebcamPreviewPointerUp}
-								onPointerCancel={handleWebcamPreviewPointerUp}
-							>
-								<video
-									ref={setRecordingWebcamPreviewNode}
-									className={styles.recordingWebcamPreviewVideo}
-									muted
-									playsInline
-									style={{ transform: "scaleX(-1)" }}
-								/>
-							</div>
-						)}
 					</div>
 				</div>
+				{showRecordingWebcamPreview && (
+					<div
+						ref={recordingWebcamPreviewContainerRef}
+						className={`${styles.recordingWebcamPreview} ${styles.electronNoDrag} pointer-events-auto`}
+						data-hud-interactive
+						title={t("recording.webcam")}
+						style={{
+							transform: `translate(${webcamPreviewOffset.x}px, ${webcamPreviewOffset.y}px)`,
+						}}
+						onMouseEnter={handleHudMouseEnter}
+						onMouseLeave={handleHudMouseLeave}
+						onPointerDown={handleWebcamPreviewPointerDown}
+						onPointerMove={handleWebcamPreviewPointerMove}
+						onPointerUp={handleWebcamPreviewPointerUp}
+						onPointerCancel={handleWebcamPreviewPointerUp}
+					>
+						<video
+							ref={setRecordingWebcamPreviewNode}
+							className={styles.recordingWebcamPreviewVideo}
+							muted
+							playsInline
+							style={{ transform: "scaleX(-1)" }}
+						/>
+					</div>
+				)}
 			</div>
 		</HudInteractionContext.Provider>
 	);

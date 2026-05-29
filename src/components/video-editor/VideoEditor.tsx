@@ -9,18 +9,17 @@ import {
 	DownloadSimple as Download,
 	FolderOpen,
 	Gear,
-	Keyboard as KeyboardIcon,
 	Pause,
 	Camera as PhCameraRegular,
 	Play,
 	Plus,
 	PuzzlePiece,
+	Record,
 	ArrowClockwise as Redo2,
 	Scissors,
 	SkipBack,
 	SkipForward,
 	Sparkle,
-	Stamp as StampIcon,
 	ArrowCounterClockwise as Undo2,
 	UserCircle as User,
 	SpeakerLow as Volume1,
@@ -116,19 +115,12 @@ const PhSparkle = (props: { className?: string; weight?: "fill" | "regular" }) =
 const PhSettings = (props: { className?: string; weight?: "fill" | "regular" }) => (
 	<Gear weight={props.weight ?? "regular"} className={props.className} />
 );
-const PhKeyboard = (props: { className?: string; weight?: "fill" | "regular" }) => (
-	<KeyboardIcon weight={props.weight ?? "regular"} className={props.className} />
-);
-const PhWatermark = (props: { className?: string; weight?: "fill" | "regular" }) => (
-	<StampIcon weight={props.weight ?? "regular"} className={props.className} />
-);
 
 import type { SourceAudioTrackSettings } from "@/components/video-editor/audio/audioTypes";
 import { extensionHost } from "@/lib/extensions";
 import { useVideoEditorAudio } from "./audio/useVideoEditorAudio";
 import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
 import { CropControl } from "./CropControl";
-import { WebcamCropControl } from "./WebcamCropControl";
 import { ExportSettingsMenu } from "./ExportSettingsMenu";
 import ExtensionManager from "./ExtensionManager";
 import {
@@ -162,8 +154,6 @@ import {
 	validateProjectData,
 } from "./projectPersistence";
 import { SettingsPanel } from "./SettingsPanel";
-import { KeyboardOverlaySidebar } from "./KeyboardOverlaySidebar";
-import { WatermarkSidebar } from "./WatermarkSidebar";
 import { getDevOpenRecordingConfig, getSmokeExportConfig } from "./smokeExportConfig";
 import { createSmokeExportProgressSampler } from "./smokeExportProgress";
 import {
@@ -178,11 +168,8 @@ import {
 	normalizeCursorTelemetry,
 	shouldAutoApplyFreshRecordingZoomsForSource,
 } from "./timeline/zoomSuggestionUtils";
-import { parseKeyboardTelemetry } from "@/lib/keyboardOverlayUtils";
-import { createWebcamMorphFrame } from "./webcamOverlay";
 import {
 	type AnnotationRegion,
-	type LayoutRegion,
 	type AudioRegion,
 	type AutoCaptionSettings,
 	type CaptionCue,
@@ -202,11 +189,7 @@ import {
 	DEFAULT_CONNECTED_ZOOM_GAP_MS,
 	DEFAULT_CROP_REGION,
 	DEFAULT_CURSOR_STYLE,
-	DEFAULT_CURSOR_AUTO_HIDE,
-	DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS,
 	DEFAULT_FIGURE_DATA,
-	DEFAULT_KEYBOARD_OVERLAY_SETTINGS,
-	DEFAULT_WATERMARK_SETTINGS,
 	DEFAULT_WEBCAM_OVERLAY,
 	DEFAULT_WEBCAM_TIME_OFFSET_MS,
 	DEFAULT_ZOOM_IN_DURATION_MS,
@@ -220,14 +203,12 @@ import {
 	type FigureData,
 	getClipSourceEndMs,
 	getTimelineDurationMs,
-	type KeyboardOverlaySettings,
 	type Padding,
 	mapSourceTimeToTimelineTime as resolveSourceTimeToTimelineTime,
 	mapTimelineTimeToSourceTime as resolveTimelineTimeToSourceTime,
 	type SpeedRegion,
 	type TrimRegion,
 	trimsToClips,
-	type WatermarkSettings,
 	type WebcamOverlaySettings,
 	type ZoomDepth,
 	type ZoomFocus,
@@ -494,9 +475,6 @@ export default function VideoEditor() {
 		initialEditorPreferences.cursorClickBounceDuration,
 	);
 	const [cursorSway, setCursorSway] = useState(initialEditorPreferences.cursorSway);
-	const [cursorAutoHide, setCursorAutoHide] = useState(initialEditorPreferences.cursorAutoHide ?? DEFAULT_CURSOR_AUTO_HIDE);
-	const [cursorAutoHideDelayMs, setCursorAutoHideDelayMs] = useState(initialEditorPreferences.cursorAutoHideDelayMs ?? DEFAULT_CURSOR_AUTO_HIDE_DELAY_MS);
-	const [cursorOffsetMs, setCursorOffsetMs] = useState(initialEditorPreferences.cursorOffsetMs ?? 0);
 	const [borderRadius, setBorderRadius] = useState(initialEditorPreferences.borderRadius);
 	const [padding, setPadding] = useState(initialEditorPreferences.padding);
 	const [frame, setFrame] = useState<string | null>(initialEditorPreferences.frame);
@@ -504,7 +482,6 @@ export default function VideoEditor() {
 	const [webcam, setWebcam] = useState<WebcamOverlaySettings>(
 		initialEditorPreferences.webcam ?? DEFAULT_WEBCAM_OVERLAY,
 	);
-	const [webcamLayoutKey, setWebcamLayoutKey] = useState(0);
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
 	const [cursorTelemetry, setCursorTelemetry] = useState<CursorTelemetryPoint[]>([]);
@@ -520,15 +497,7 @@ export default function VideoEditor() {
 	const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
 	const [speedRegions, setSpeedRegions] = useState<SpeedRegion[]>([]);
 	const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([]);
-	const [layoutRegions, setLayoutRegions] = useState<LayoutRegion[]>([]);
-	const nextLayoutIdRef = useRef(1);
 	const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-	const [keyboardOverlaySettings, setKeyboardOverlaySettings] = useState<KeyboardOverlaySettings>(
-		() => ({ ...DEFAULT_KEYBOARD_OVERLAY_SETTINGS }),
-	);
-	const [watermarkSettings, setWatermarkSettings] = useState<WatermarkSettings>(() => ({
-		...DEFAULT_WATERMARK_SETTINGS,
-	}));
 	const [audioRegions, setAudioRegions] = useState<AudioRegion[]>([]);
 	const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null);
 	const [sourceAudioTrackSettingsByClip, setSourceAudioTrackSettingsByClip] = useState<
@@ -625,7 +594,6 @@ export default function VideoEditor() {
 	const [presetPopoverOpen, setPresetPopoverOpen] = useState(false);
 	const [presetNameDraft, setPresetNameDraft] = useState("");
 	const [showCropModal, setShowCropModal] = useState(false);
-	const [showWebcamCropModal, setShowWebcamCropModal] = useState(false);
 	const [previewVersion, setPreviewVersion] = useState(0);
 	const [isPreviewReady, setIsPreviewReady] = useState(false);
 	const [autoSuggestZoomsTrigger, setAutoSuggestZoomsTrigger] = useState(0);
@@ -668,10 +636,37 @@ export default function VideoEditor() {
 	}
 
 	const [timelineCollapsed, setTimelineCollapsed] = useState(false);
-	const [timelineHeightPx, setTimelineHeightPx] = useState(220);
+	const [timelineHeight, setTimelineHeight] = useState(280);
 	const timelineResizingRef = useRef(false);
 	const timelineResizeStartYRef = useRef(0);
 	const timelineResizeStartHeightRef = useRef(0);
+
+	const handleTimelineResizeMouseDown = useCallback((e: React.MouseEvent) => {
+		e.preventDefault();
+		timelineResizingRef.current = true;
+		timelineResizeStartYRef.current = e.clientY;
+		timelineResizeStartHeightRef.current = timelineHeight;
+
+		const handleMouseMove = (ev: MouseEvent) => {
+			if (!timelineResizingRef.current) return;
+			const delta = timelineResizeStartYRef.current - ev.clientY;
+			const newHeight = Math.max(160, Math.min(600, timelineResizeStartHeightRef.current + delta));
+			setTimelineHeight(newHeight);
+		};
+
+		const handleMouseUp = () => {
+			timelineResizingRef.current = false;
+			window.removeEventListener("mousemove", handleMouseMove);
+			window.removeEventListener("mouseup", handleMouseUp);
+		};
+
+		window.addEventListener("mousemove", handleMouseMove);
+		window.addEventListener("mouseup", handleMouseUp);
+	}, [timelineHeight]);
+
+	const handleNewRecording = useCallback(() => {
+		window.electronAPI?.openSourceSelector?.();
+	}, []);
 
 	useEffect(() => {
 		void window.electronAPI?.getPlatform?.()?.then((platform) => {
@@ -739,9 +734,6 @@ export default function VideoEditor() {
 			cursorClickBounce,
 			cursorClickBounceDuration,
 			cursorSway,
-			cursorAutoHide,
-			cursorAutoHideDelayMs,
-			cursorOffsetMs,
 			borderRadius,
 			padding: { ...padding },
 			frame,
@@ -887,9 +879,6 @@ export default function VideoEditor() {
 		setCursorClickBounce(snapshot.cursorClickBounce);
 		setCursorClickBounceDuration(snapshot.cursorClickBounceDuration);
 		setCursorSway(snapshot.cursorSway);
-		if (snapshot.cursorAutoHide !== undefined) setCursorAutoHide(snapshot.cursorAutoHide);
-		if (snapshot.cursorAutoHideDelayMs !== undefined) setCursorAutoHideDelayMs(snapshot.cursorAutoHideDelayMs);
-		if (snapshot.cursorOffsetMs !== undefined) setCursorOffsetMs(snapshot.cursorOffsetMs);
 		setBorderRadius(snapshot.borderRadius);
 		setPadding({ ...snapshot.padding });
 		setFrame(snapshot.frame);
@@ -1572,16 +1561,6 @@ export default function VideoEditor() {
 				icon: PhCaptions,
 			},
 			{
-				id: "keyboard" as const,
-				label: t("settings.sections.keyboard", "Keyboard"),
-				icon: PhKeyboard,
-			},
-			{
-				id: "watermark" as const,
-				label: t("settings.sections.watermark", "Watermark"),
-				icon: PhWatermark,
-			},
-			{
 				id: "settings" as const,
 				label: t("settings.sections.settings", "Settings"),
 				icon: PhSettings,
@@ -1675,43 +1654,6 @@ export default function VideoEditor() {
 		() => videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null),
 		[videoPath, videoSourcePath],
 	);
-
-	// Auto-load keyboard telemetry sidecar (.keyboard.json) when the video changes
-	// so keyboard overlay events appear automatically on the timeline.
-	useEffect(() => {
-		let cancelled = false;
-		const sourcePath = currentSourcePath;
-		if (!sourcePath) {
-			setKeyboardOverlaySettings((prev) => ({ ...prev, events: [] }));
-			return;
-		}
-
-		void (async () => {
-			try {
-				const result = await window.electronAPI.getKeyboardTelemetry(sourcePath);
-				if (cancelled) return;
-				if (result.success && result.events && result.events.length > 0) {
-					const events = parseKeyboardTelemetry(result.events);
-					setKeyboardOverlaySettings((prev) => ({
-						...prev,
-						events,
-						enabled: events.length > 0 ? true : prev.enabled,
-					}));
-				} else {
-					setKeyboardOverlaySettings((prev) => ({ ...prev, events: [] }));
-				}
-			} catch (err) {
-				console.warn("[KeyboardOverlay] Failed to load keyboard telemetry:", err);
-				if (!cancelled) {
-					setKeyboardOverlaySettings((prev) => ({ ...prev, events: [] }));
-				}
-			}
-		})();
-
-		return () => {
-			cancelled = true;
-		};
-	}, [currentSourcePath]);
 	const projectDisplayName = useMemo(() => {
 		const fileName =
 			currentProjectPath?.split(/[\\/]/).pop() ??
@@ -1804,7 +1746,6 @@ export default function VideoEditor() {
 				gifSizePreset,
 				sourceAudioTrackSettingsByClip,
 				defaultSourceAudioTrackSettings,
-				watermark: watermarkSettings,
 			}),
 		[
 			buildPersistedEditorState,
@@ -1867,7 +1808,6 @@ export default function VideoEditor() {
 			frame,
 			sourceAudioTrackSettingsByClip,
 			defaultSourceAudioTrackSettings,
-			watermarkSettings,
 		],
 	);
 
@@ -2059,9 +1999,6 @@ export default function VideoEditor() {
 			setGifFrameRate(normalizedEditor.gifFrameRate);
 			setGifLoop(normalizedEditor.gifLoop);
 			setGifSizePreset(normalizedEditor.gifSizePreset);
-			if (normalizedEditor.watermark) {
-				setWatermarkSettings(normalizedEditor.watermark);
-			}
 
 			setSelectedZoomId(null);
 			setSelectedClipId(null);
@@ -2190,8 +2127,6 @@ export default function VideoEditor() {
 		setHasClipSourceAudio(false);
 		setAutoCaptions([]);
 		setAutoCaptionSettings((prev) => ({ ...prev, enabled: false }));
-		setKeyboardOverlaySettings({ ...DEFAULT_KEYBOARD_OVERLAY_SETTINGS });
-		setWatermarkSettings({ ...DEFAULT_WATERMARK_SETTINGS });
 		setSelectedZoomId(null);
 		setSelectedClipId(null);
 		setSelectedAnnotationId(null);
@@ -3176,9 +3111,8 @@ export default function VideoEditor() {
 		return normalizeCursorTelemetry(
 			cursorTelemetry,
 			totalMs > 0 ? totalMs : Number.MAX_SAFE_INTEGER,
-			cursorOffsetMs,
 		);
-	}, [cursorTelemetry, duration, cursorOffsetMs]);
+	}, [cursorTelemetry, duration]);
 
 	const displayedTimelineWindow = useMemo(() => {
 		const totalMs = Math.max(0, Math.round(duration * 1000));
@@ -3407,7 +3341,6 @@ export default function VideoEditor() {
 		(span: Span) => {
 			const id = `zoom-${nextZoomIdRef.current++}`;
 			const defaultDepth: ZoomDepth = 2;
-			const isCameraZoom = Boolean((span as { isCameraZoom?: boolean }).isCameraZoom);
 			const newRegion: ZoomRegion = {
 				id,
 				startMs: Math.round(span.start),
@@ -3415,9 +3348,8 @@ export default function VideoEditor() {
 				depth: defaultDepth,
 				focus: clampFocusToDepth({ cx: 0.5, cy: 0.5 }, defaultDepth),
 				mode: "auto",
-				isCameraZoom,
 			};
-			if (!isCameraZoom && videoPath && pendingFreshRecordingAutoZoomPathRef.current === videoPath) {
+			if (videoPath && pendingFreshRecordingAutoZoomPathRef.current === videoPath) {
 				autoSuggestedVideoPathRef.current = videoPath;
 				pendingFreshRecordingAutoZoomPathRef.current = null;
 			}
@@ -3639,21 +3571,12 @@ export default function VideoEditor() {
 				if (!target) return prev;
 				const leftId = `clip-${nextClipIdRef.current++}`;
 				const rightId = `clip-${nextClipIdRef.current++}`;
-				const speed = Number.isFinite(target.speed) && target.speed > 0 ? target.speed : 1;
-				// The left piece starts at the same source offset as the original clip.
-				const leftSourceStart = target.sourceStartMs ?? 0;
-				// The right piece starts further into the source audio by however much
-				// the left piece covers (display duration × speed = source duration).
-				const leftDisplayDurationMs = Math.round(splitMs) - target.startMs;
-				const rightSourceStart = leftSourceStart + leftDisplayDurationMs * speed;
 				const left: ClipRegion = {
 					id: leftId,
 					startMs: target.startMs,
 					endMs: Math.round(splitMs),
 					speed: target.speed,
 					muted: target.muted,
-					showSourceAudio: target.showSourceAudio,
-					sourceStartMs: leftSourceStart,
 				};
 				const right: ClipRegion = {
 					id: rightId,
@@ -3661,8 +3584,6 @@ export default function VideoEditor() {
 					endMs: target.endMs,
 					speed: target.speed,
 					muted: target.muted,
-					showSourceAudio: target.showSourceAudio,
-					sourceStartMs: rightSourceStart,
 				};
 				if (selectedClipId === target.id) {
 					setSelectedClipId(leftId);
@@ -3732,27 +3653,9 @@ export default function VideoEditor() {
 			}
 
 			setClipRegions((prev) =>
-				prev.map((clip) => {
-					if (clip.id !== id) return clip;
-					const speed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
-					const startDelta = newStart - clip.startMs;
-					const endDelta = newEnd - clip.endMs;
-					// Only advance sourceStartMs when the left edge is trimmed inward
-					// (start increases but end doesn't move by the same amount).
-					// A pure move (startDelta ≈ endDelta) keeps the same source section.
-					const isLeftTrim = startDelta > 0 && Math.abs(startDelta - endDelta) > 1;
-					const newSourceStartMs = isLeftTrim
-						? (clip.sourceStartMs ?? 0) + startDelta * speed
-						: clip.sourceStartMs;
-					return {
-						...clip,
-						startMs: newStart,
-						endMs: newEnd,
-						...(newSourceStartMs !== undefined && newSourceStartMs !== clip.sourceStartMs
-							? { sourceStartMs: newSourceStartMs }
-							: {}),
-					};
-				}),
+				prev.map((clip) =>
+					clip.id === id ? { ...clip, startMs: newStart, endMs: newEnd } : clip,
+				),
 			);
 		},
 		[clipRegions],
@@ -3936,14 +3839,13 @@ export default function VideoEditor() {
 
 	const handleAnnotationAdded = useCallback((span: Span, trackIndex = 0) => {
 		const id = `annotation-${nextAnnotationIdRef.current++}`;
-		const zIndex = nextAnnotationZIndexRef.current++;
-		const isLayoutItem = trackIndex === -1;
+		const zIndex = nextAnnotationZIndexRef.current++; // Assign z-index based on creation order
 		const newRegion: AnnotationRegion = {
 			id,
 			startMs: Math.round(span.start),
 			endMs: Math.round(span.end),
 			type: "text",
-			content: isLayoutItem ? "Layout" : "Enter text...",
+			content: "Enter text...",
 			position: { ...DEFAULT_ANNOTATION_POSITION },
 			size: { ...DEFAULT_ANNOTATION_SIZE },
 			style: { ...DEFAULT_ANNOTATION_STYLE },
@@ -3951,9 +3853,7 @@ export default function VideoEditor() {
 			trackIndex,
 		};
 		setAnnotationRegions((prev) => [...prev, newRegion]);
-		if (!isLayoutItem) {
-			setSelectedAnnotationId(id);
-		}
+		setSelectedAnnotationId(id);
 		setSelectedZoomId(null);
 	}, []);
 
@@ -3961,7 +3861,7 @@ export default function VideoEditor() {
 		(id: string, span: Span, trackIndex?: number) => {
 			const normalizedTrackIndex =
 				typeof trackIndex === "number" && Number.isFinite(trackIndex)
-					? Math.floor(trackIndex) // allow -1 for layout row
+					? Math.max(0, Math.floor(trackIndex))
 					: undefined;
 
 			setAnnotationRegions((prev) =>
@@ -4480,8 +4380,6 @@ export default function VideoEditor() {
 						sourceAudioFallbackStartDelayMsByPath:
 							audio.sourceAudioFallbackStartDelayMsByPath,
 						sourceAudioTrackSettings: sourceAudioTrackSettingsForExport,
-						keyboardOverlay: keyboardOverlaySettings,
-						watermark: watermarkSettings,
 						previewWidth,
 						previewHeight,
 						onProgress: (progress: ExportProgress) => {
@@ -5201,6 +5099,18 @@ export default function VideoEditor() {
 					>
 						<FolderOpen className="h-4 w-4" />
 					</Button>
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						onClick={handleNewRecording}
+						className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[#f43f5e]/20 bg-[#f43f5e]/10 px-2.5 text-[#f43f5e] transition-colors hover:bg-[#f43f5e]/20 hover:text-[#f43f5e]"
+						title="New Recording"
+						aria-label="New Recording"
+					>
+						<Record className="h-3.5 w-3.5" weight="fill" />
+						<span className="text-xs font-semibold tracking-tight">New Recording</span>
+					</Button>
 					<DiscordLinkButton />
 					<FeedbackDialog />
 					<div className="ml-1 h-5 w-px bg-foreground/10" />
@@ -5719,21 +5629,6 @@ export default function VideoEditor() {
 						{/* Panel */}
 						{activeEffectSection === "extensions" ? (
 							<ExtensionManager />
-						) : activeEffectSection === "keyboard" ? (
-							<div className="w-[332px] min-w-[280px] max-w-[332px] bg-editor-panel rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
-								<KeyboardOverlaySidebar
-									settings={keyboardOverlaySettings}
-									currentTimeMs={timelinePlayheadTime * 1000}
-									onChange={setKeyboardOverlaySettings}
-								/>
-							</div>
-						) : activeEffectSection === "watermark" ? (
-							<div className="w-[332px] min-w-[280px] max-w-[332px] bg-editor-panel rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
-								<WatermarkSidebar
-									settings={watermarkSettings}
-									onChange={setWatermarkSettings}
-								/>
-							</div>
 						) : (
 							<SettingsPanel
 								panelMode="editor"
@@ -5885,12 +5780,6 @@ export default function VideoEditor() {
 								onCursorClickBounceDurationChange={setCursorClickBounceDuration}
 								cursorSway={cursorSway}
 								onCursorSwayChange={setCursorSway}
-								cursorAutoHide={cursorAutoHide}
-								onCursorAutoHideChange={(v) => setCursorAutoHide(v)}
-								cursorAutoHideDelayMs={cursorAutoHideDelayMs}
-								onCursorAutoHideDelayMsChange={(v) => setCursorAutoHideDelayMs(v)}
-								cursorOffsetMs={cursorOffsetMs}
-								onCursorOffsetMsChange={(v) => setCursorOffsetMs(v)}
 								borderRadius={borderRadius}
 								onBorderRadiusChange={setBorderRadius}
 								webcam={webcam}
@@ -5900,10 +5789,6 @@ export default function VideoEditor() {
 								onWebcamChange={setWebcam}
 								onUploadWebcam={handleUploadWebcam}
 								onClearWebcam={handleClearWebcam}
-								onWebcamPresetApplied={() => setWebcamLayoutKey((k) => k + 1)}
-								screenVideoEl={videoPlaybackRef.current?.video ?? null}
-								webcamVideoEl={videoPlaybackRef.current?.webcamVideo ?? null}
-								previewCurrentTimeForThumbnails={currentTime}
 								padding={padding}
 								onPaddingChange={setPadding}
 								frame={frame}
@@ -6114,24 +5999,20 @@ export default function VideoEditor() {
 													cursorClickBounceDuration
 												}
 												cursorSway={cursorSway}
-												cursorAutoHide={cursorAutoHide}
-												cursorAutoHideDelayMs={cursorAutoHideDelayMs}
 												volume={
+													audio.shouldMutePreviewVideo ||
 													audio.isCurrentClipMuted
 														? 0
 														: Math.max(
 																0,
-																Math.min(1, previewVolume),
+																Math.min(
+																	1,
+																	previewVolume *
+																		audio.embeddedSourcePreviewGain,
+																),
 															)
 												}
-												keyboardOverlay={keyboardOverlaySettings}
-												watermark={watermarkSettings}
 												suspendRendering={shouldSuspendPreviewRendering}
-												onWebcamClick={() => setActiveEffectSection("webcam")}
-												onWebcamChange={(patch) => setWebcam((prev) => ({ ...prev, ...patch }))}
-												webcamEditorActive={activeEffectSection === "webcam"}
-												webcamLayoutKey={webcamLayoutKey}
-												onWebcamCropOpen={() => setShowWebcamCropModal(true)}
 											/>
 										</div>
 									</div>
@@ -6192,18 +6073,6 @@ export default function VideoEditor() {
 											className="text-muted-foreground hover:text-foreground hover:bg-foreground/10 cursor-pointer"
 										>
 											{t("timeline.audio.label")}
-										</DropdownMenuItem>
-										<DropdownMenuItem
-											onClick={() => timelineRef.current?.addLayout()}
-											className="text-muted-foreground hover:text-foreground hover:bg-foreground/10 cursor-pointer"
-										>
-											Layout
-										</DropdownMenuItem>
-										<DropdownMenuItem
-											onClick={() => timelineRef.current?.addCameraZoom()}
-											className="text-muted-foreground hover:text-foreground hover:bg-foreground/10 cursor-pointer"
-										>
-											Camera Zoom
 										</DropdownMenuItem>
 									</DropdownMenuContent>
 								</DropdownMenu>
@@ -6374,36 +6243,19 @@ export default function VideoEditor() {
 					</div>
 				</div>
 				<div
-					className="flex-shrink-0 flex flex-col"
+					className="flex-shrink-0 flex flex-col overflow-hidden"
 					style={{
-						height: timelineCollapsed ? undefined : timelineHeightPx,
-						minHeight: timelineCollapsed ? 0 : 120,
+						height: timelineCollapsed ? 0 : timelineHeight,
+						minHeight: timelineCollapsed ? 0 : 160,
 					}}
 				>
-					{/* Resize handle */}
 					{!timelineCollapsed && (
 						<div
-							className="flex-shrink-0 h-1.5 cursor-row-resize bg-transparent hover:bg-[#2563EB]/30 transition-colors group relative"
-							onMouseDown={(e) => {
-								e.preventDefault();
-								timelineResizingRef.current = true;
-								timelineResizeStartYRef.current = e.clientY;
-								timelineResizeStartHeightRef.current = timelineHeightPx;
-								const onMove = (ev: MouseEvent) => {
-									if (!timelineResizingRef.current) return;
-									const delta = timelineResizeStartYRef.current - ev.clientY;
-									setTimelineHeightPx(Math.max(120, Math.min(600, timelineResizeStartHeightRef.current + delta)));
-								};
-								const onUp = () => {
-									timelineResizingRef.current = false;
-									window.removeEventListener("mousemove", onMove);
-									window.removeEventListener("mouseup", onUp);
-								};
-								window.addEventListener("mousemove", onMove);
-								window.addEventListener("mouseup", onUp);
-							}}
+							className="flex-shrink-0 h-2 cursor-row-resize group flex items-center justify-center hover:bg-foreground/5 transition-colors"
+							onMouseDown={handleTimelineResizeMouseDown}
+							title="Drag to resize timeline"
 						>
-							<div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px bg-foreground/10 group-hover:bg-[#2563EB]/50 transition-colors" />
+							<div className="w-10 h-1 rounded-full bg-foreground/20 group-hover:bg-foreground/50 transition-colors" />
 						</div>
 					)}
 					<TimelineEditor
@@ -6429,17 +6281,6 @@ export default function VideoEditor() {
 						trimRegions={trimRegions}
 						clipRegions={clipRegions}
 						onClipSplit={handleClipSplit}
-						onWebcamCut={(timeMs) => {
-							if (!webcam.enabled) return;
-							const morphFrame = createWebcamMorphFrame(webcam, timeMs);
-							setWebcam((prev) => ({
-								...prev,
-								morphFrames: [
-									...(prev.morphFrames ?? []).filter((f) => Math.abs(f.timeMs - timeMs) > 100),
-									morphFrame,
-								].sort((a, b) => a.timeMs - b.timeMs),
-							}));
-						}}
 						onClipSpanChange={handleClipSpanChange}
 						selectedClipId={selectedClipId}
 						onSelectClip={handleSelectClip}
@@ -6455,18 +6296,7 @@ export default function VideoEditor() {
 						onAnnotationDelete={handleAnnotationDelete}
 						selectedAnnotationId={selectedAnnotationId}
 						onSelectAnnotation={handleSelectAnnotation}
-						layoutRegions={layoutRegions}
-						onLayoutAdded={(span) => {
-							const id = `layout-${nextLayoutIdRef.current++}`;
-							setLayoutRegions((prev) => [...prev, { id, startMs: Math.round(span.start), endMs: Math.round(span.end), presetId: webcam.activePresetId ?? "corner-br" }]);
-						}}
-						onLayoutSpanChange={(id, span) => {
-							setLayoutRegions((prev) => prev.map((r) => r.id === id ? { ...r, startMs: Math.round(span.start), endMs: Math.round(span.end) } : r));
-						}}
-						onLayoutDelete={(id) => {
-							setLayoutRegions((prev) => prev.filter((r) => r.id !== id));
-						}}
-						showSourceAudioTrack={audio.sourceAudioFallbackPaths.length > 0 || hasClipSourceAudio}
+						showSourceAudioTrack={clipRegions.some((c) => c.showSourceAudio)}
 						sourceAudioTrackSettings={audio.activeSourceAudioTrackSettings}
 						getSourceAudioTrackSettingsForClip={
 							audio.getSourceAudioTrackSettingsForClip
@@ -6477,13 +6307,6 @@ export default function VideoEditor() {
 						onSourceAudioTracksMetaChange={(tracks) => {
 							audio.onSourceAudioTracksMetaChange(tracks);
 						}}
-						keyboardEvents={keyboardOverlaySettings.events}
-						webcamSpan={
-							webcam.enabled && duration > 0
-								? { startMs: 0, endMs: Math.round(duration * 1000) }
-								: null
-						}
-						sourceAudioStartDelayMsByPath={audio.sourceAudioFallbackStartDelayMsByPath}
 					/>
 				</div>
 			</div>
@@ -6526,61 +6349,6 @@ export default function VideoEditor() {
 								className="bg-[#2563EB] text-white hover:bg-[#2563EB]/90"
 							>
 								{t("common.actions.done")}
-							</Button>
-						</div>
-					</div>
-				</>
-			) : null}
-
-			{/* Webcam crop modal */}
-			{showWebcamCropModal ? (
-				<>
-					<div
-						className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-						onClick={() => setShowWebcamCropModal(false)}
-					/>
-					<div className="fixed left-1/2 top-1/2 z-[60] w-[90vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-foreground/10 bg-editor-dialog p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-						<div className="mb-4 flex items-center justify-between">
-							<div>
-								<span className="text-lg font-bold text-foreground">Mask Position</span>
-								<p className="mt-1 text-xs text-muted-foreground">
-									Drag the mask to reposition it on the webcam. Drag corners to resize. The mask shape follows your roundness setting.
-								</p>
-							</div>
-							<Button
-								variant="ghost"
-								size="icon"
-								onClick={() => setShowWebcamCropModal(false)}
-								className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-							>
-								<X className="h-5 w-5" />
-							</Button>
-						</div>
-						<WebcamCropControl
-							cropRegion={webcam.cropRegion}
-							cornerRadius={webcam.cornerRadius}
-							mirrored={webcam.mirror}
-							previewSrc={resolvedWebcamVideoUrl}
-							previewCurrentTime={currentTime}
-							previewPlaying={isPlaying}
-							previewTimeOffsetMs={webcam.timeOffsetMs}
-							onCropChange={(cropRegion) => setWebcam((prev) => ({ ...prev, cropRegion }))}
-						/>
-						<div className="mt-4 flex items-center justify-between">
-							<Button
-								variant="ghost"
-								size="sm"
-								onClick={() => setWebcam((prev) => ({ ...prev, cropRegion: { x: 0, y: 0, width: 1, height: 1 } }))}
-								className="text-muted-foreground hover:text-foreground text-xs"
-							>
-								Reset Mask
-							</Button>
-							<Button
-								onClick={() => setShowWebcamCropModal(false)}
-								size="sm"
-								className="bg-[#2563EB] text-white hover:bg-[#2563EB]/90"
-							>
-								Done
 							</Button>
 						</div>
 					</div>

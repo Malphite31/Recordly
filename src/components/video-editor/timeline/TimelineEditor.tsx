@@ -21,6 +21,7 @@ import type {
 	ClipRegion,
 	CursorTelemetryPoint,
 	KeyboardOverlayEvent,
+	LayoutRegion,
 	SpeedRegion,
 	TrimRegion,
 	ZoomFocus,
@@ -83,6 +84,13 @@ export interface TimelineEditorProps {
 	) => SourceAudioTrackSettings;
 	onSourceAudioTracksMetaChange?: (tracks: SourceAudioTrackMeta) => void;
 	keyboardEvents?: KeyboardOverlayEvent[];
+	layoutRegions?: LayoutRegion[];
+	onLayoutAdded?: (span: Span) => void;
+	onLayoutSpanChange?: (id: string, span: Span) => void;
+	onLayoutDelete?: (id: string) => void;
+	onWebcamCut?: (timeMs: number) => void;
+	webcamSpan?: { startMs: number; endMs: number } | null;
+	sourceAudioStartDelayMsByPath?: Record<string, number>;
 }
 
 function extractLocalPathFromMediaServerUrl(input: string | null | undefined): string | null {
@@ -116,6 +124,8 @@ export interface TimelineEditorHandle {
 	splitClip: () => void;
 	addAnnotation: (trackIndex?: number) => void;
 	addAudio: (trackIndex?: number) => Promise<void>;
+	addLayout: () => void;
+	addCameraZoom: () => void;
 	keyframes: { id: string; time: number }[];
 }
 

@@ -26,7 +26,9 @@ export function resolveAudioPlacement({
 		return null;
 	}
 
-	const desiredDuration = Math.min(audioDurationMs, maxRemainingDuration);
+	// Use the full audio duration — don't cap to video length.
+	// Audio regions are allowed to extend beyond the video end.
+	const desiredDuration = audioDurationMs;
 	const normalizedPreferredTrackIndex = Number.isFinite(preferredTrackIndex)
 		? Math.max(0, Math.floor(preferredTrackIndex ?? 0))
 		: null;
@@ -53,7 +55,7 @@ export function resolveAudioPlacement({
 		}
 
 		const nextRegion = trackRegions.find((region) => region.startMs > startPos);
-		return nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
+		return nextRegion ? nextRegion.startMs - startPos : Number.POSITIVE_INFINITY;
 	};
 
 	let selectedTrackIndex: number | null = null;
@@ -85,6 +87,6 @@ export function resolveAudioPlacement({
 
 	return {
 		trackIndex: selectedTrackIndex,
-		durationMs: Math.min(audioDurationMs, availableGap, totalMs - startPos),
+		durationMs: Math.min(audioDurationMs, availableGap),
 	};
 }

@@ -1,10 +1,4 @@
-import type {
-	CropRegion,
-	WebcamCorner,
-	WebcamMorphFrame,
-	WebcamOverlaySettings,
-	WebcamPositionPreset,
-} from "./types";
+import type { CropRegion, WebcamCorner, WebcamPositionPreset } from "./types";
 
 const MIN_WEBCAM_OVERLAY_SIZE_PX = 56;
 
@@ -36,41 +30,6 @@ export function getWebcamPositionForPreset(preset: WebcamPositionPreset): { x: n
 		default:
 			return { x: 1, y: 1 };
 	}
-}
-
-export function createWebcamMorphFrame(
-	webcam: WebcamOverlaySettings,
-	timeMs: number,
-	id = `webcam-morph-${Date.now()}`,
-): WebcamMorphFrame {
-	const position =
-		webcam.positionPreset === "custom"
-			? { x: webcam.positionX, y: webcam.positionY }
-			: getWebcamPositionForPreset(webcam.positionPreset || webcam.corner);
-
-	return {
-		id,
-		timeMs: Math.max(0, Math.round(timeMs)),
-		positionX: clamp(position.x, 0, 1),
-		positionY: clamp(position.y, 0, 1),
-		size: clamp(webcam.size, 10, 100),
-		cornerRadius: clamp(webcam.cornerRadius, 0, 540),
-		margin: clamp(webcam.margin, 0, 96),
-		shadow: clamp(webcam.shadow, 0, 1),
-	};
-}
-
-export function normalizeWebcamMorphFrames(rawFrames: unknown): WebcamMorphFrame[] {
-	void rawFrames;
-	return [];
-}
-
-export function resolveWebcamOverlayAtTime(
-	webcam: WebcamOverlaySettings,
-	timeMs: number,
-): WebcamOverlaySettings {
-	void timeMs;
-	return webcam;
 }
 
 function isCornerPreset(preset: WebcamPositionPreset): preset is WebcamCorner {

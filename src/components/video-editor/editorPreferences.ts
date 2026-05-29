@@ -42,9 +42,6 @@ type PersistedEditorControls = Pick<
 	| "cursorClickBounce"
 	| "cursorClickBounceDuration"
 	| "cursorSway"
-	| "cursorAutoHide"
-	| "cursorAutoHideDelayMs"
-	| "cursorOffsetMs"
 	| "borderRadius"
 	| "padding"
 	| "frame"
@@ -128,9 +125,6 @@ export const DEFAULT_EDITOR_PREFERENCES: EditorPreferences = {
 	cursorClickBounce: DEFAULT_EDITOR_CONTROLS.cursorClickBounce,
 	cursorClickBounceDuration: DEFAULT_EDITOR_CONTROLS.cursorClickBounceDuration,
 	cursorSway: DEFAULT_EDITOR_CONTROLS.cursorSway,
-	cursorAutoHide: false,
-	cursorAutoHideDelayMs: 1500,
-	cursorOffsetMs: 0,
 	borderRadius: DEFAULT_EDITOR_CONTROLS.borderRadius,
 	padding: DEFAULT_EDITOR_CONTROLS.padding,
 	frame: DEFAULT_EDITOR_CONTROLS.frame,
@@ -325,9 +319,6 @@ function normalizeEditorControls(
 		cursorClickBounceDuration:
 			sanitizedRaw.cursorClickBounceDuration ?? fallback.cursorClickBounceDuration,
 		cursorSway: sanitizedRaw.cursorSway ?? fallback.cursorSway,
-		cursorAutoHide: sanitizedRaw.cursorAutoHide ?? fallback.cursorAutoHide ?? false,
-		cursorAutoHideDelayMs: sanitizedRaw.cursorAutoHideDelayMs ?? fallback.cursorAutoHideDelayMs ?? 1500,
-		cursorOffsetMs: sanitizedRaw.cursorOffsetMs ?? fallback.cursorOffsetMs ?? 0,
 		borderRadius: sanitizedRaw.borderRadius ?? fallback.borderRadius,
 		padding: sanitizedRaw.padding ?? fallback.padding,
 		frame: sanitizedRaw.frame !== undefined ? sanitizedRaw.frame : fallback.frame,
@@ -389,9 +380,6 @@ function normalizeEditorControls(
 		cursorClickBounce: normalized.cursorClickBounce,
 		cursorClickBounceDuration: normalized.cursorClickBounceDuration,
 		cursorSway: normalized.cursorSway,
-		cursorAutoHide: normalized.cursorAutoHide,
-		cursorAutoHideDelayMs: normalized.cursorAutoHideDelayMs,
-		cursorOffsetMs: normalized.cursorOffsetMs,
 		borderRadius: normalized.borderRadius,
 		padding: normalized.padding,
 		frame: normalized.frame,

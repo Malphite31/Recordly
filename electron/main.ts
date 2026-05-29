@@ -236,7 +236,7 @@ function showHudOverlayFromTray() {
 	if (process.platform === "win32" && isHudOverlayMousePassthroughSupported()) {
 		hud.showInactive();
 		hud.moveTop();
-		reassertHudOverlayMouseState();
+		reassertHudOverlayMouseState({ interactiveGraceMs: 1200 });
 		return true;
 	}
 
