@@ -4,8 +4,16 @@ import type { AudioPeaksData } from "../../core/timelineTypes";
 
 interface AudioWaveformProps {
 	peaks: AudioPeaksData;
+	/** Audio-file time (ms) where the segment starts. */
 	segmentStartMs?: number;
+	/** Audio-file time (ms) where the segment ends. */
 	segmentEndMs?: number;
+	/**
+	 * The item's timeline span (ms). When provided together with segmentStartMs/End,
+	 * the waveform correctly handles partial visibility (scrolled/zoomed timeline).
+	 */
+	itemSpanStartMs?: number;
+	itemSpanEndMs?: number;
 	gain?: number;
 	normalize?: boolean;
 	className?: string;
@@ -20,6 +28,8 @@ function AudioWaveformComponent({
 	peaks,
 	segmentStartMs,
 	segmentEndMs,
+	itemSpanStartMs,
+	itemSpanEndMs,
 	gain = 1,
 	normalize = false,
 	className,
@@ -55,8 +65,6 @@ function AudioWaveformComponent({
 			const now = performance.now();
 			const elapsed = now - lastDrawAtRef.current;
 			if (elapsed < 33) {
-				// Throttle to ~30fps: schedule next draw after remaining time instead of
-				// immediately re-queuing a RAF (which would spin at 60fps doing nothing).
 				timeoutId = window.setTimeout(() => {
 					timeoutId = 0;
 					rafId = requestAnimationFrame(draw);
@@ -83,24 +91,51 @@ function AudioWaveformComponent({
 			const { peaks: peakData, durationMs } = peaks;
 			if (durationMs <= 0 || peakData.length === 0) return;
 
-			// segmentStartMs/segmentEndMs are in audio-file time (0-based ms).
-			// When not provided (standalone waveform), fall back to the timeline visible
-			// range — but offset it to 0-based by subtracting range.start so the waveform
-			// still maps correctly into the audio file.
-			const audioStartMs = segmentStartMs ?? 0;
-			const audioEndMs = segmentEndMs ?? (range.end - range.start);
-			const audioDurationMs = audioEndMs - audioStartMs;
+			// Determine which portion of the audio file is visible in the canvas.
+			//
+			// The canvas fills the *visible* portion of the item (dnd-timeline clips
+			// items to the viewport via itemContentStyle padding). We need to map
+			// canvas pixels → audio-file time correctly.
+			//
+			// If we know the item's full timeline span and the audio segment bounds,
+			// we can compute which audio slice corresponds to the visible pixels.
+			let audioStartMs: number;
+			let audioEndMs: number;
 
+			if (
+				segmentStartMs !== undefined &&
+				segmentEndMs !== undefined &&
+				itemSpanStartMs !== undefined &&
+				itemSpanEndMs !== undefined
+			) {
+				const itemDurationMs = Math.max(1, itemSpanEndMs - itemSpanStartMs);
+				const audioDuration = segmentEndMs - segmentStartMs;
+
+				// Visible timeline window clipped to the item's span
+				const visibleTimelineStart = Math.max(range.start, itemSpanStartMs);
+				const visibleTimelineEnd = Math.min(range.end, itemSpanEndMs);
+
+				if (visibleTimelineEnd <= visibleTimelineStart) return;
+
+				// Map visible timeline window → audio-file time
+				const ratio = audioDuration / itemDurationMs;
+				audioStartMs = segmentStartMs + (visibleTimelineStart - itemSpanStartMs) * ratio;
+				audioEndMs = segmentStartMs + (visibleTimelineEnd - itemSpanStartMs) * ratio;
+			} else {
+				// Fallback: draw the full segment across the canvas
+				audioStartMs = segmentStartMs ?? 0;
+				audioEndMs = segmentEndMs ?? (range.end - range.start);
+			}
+
+			const audioDurationMs = audioEndMs - audioStartMs;
 			if (audioDurationMs <= 0) return;
 
 			const midY = height / 2;
 			ctx.beginPath();
 
 			for (let px = 0; px < width; px++) {
-				// t is the audio-file time for this pixel
 				const t = audioStartMs + (px / width) * audioDurationMs;
 
-				// Skip pixels that fall outside the actual audio file
 				if (t < 0 || t > durationMs) continue;
 
 				const exactIndex = (t / durationMs) * (peakData.length - 1);
@@ -128,7 +163,7 @@ function AudioWaveformComponent({
 			if (rafId) cancelAnimationFrame(rafId);
 			if (timeoutId) clearTimeout(timeoutId);
 		};
-	}, [gain, normalize, peaks, range.start, range.end, resizeKey, segmentStartMs, segmentEndMs]);
+	}, [gain, normalize, peaks, range.start, range.end, resizeKey, segmentStartMs, segmentEndMs, itemSpanStartMs, itemSpanEndMs]);
 
 	return (
 		<canvas

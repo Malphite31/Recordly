@@ -5,9 +5,9 @@ export interface ShadowLayerProfile {
 }
 
 export const VIDEO_SHADOW_LAYER_PROFILES: ReadonlyArray<ShadowLayerProfile> = Object.freeze([
-	{ offsetScale: 12, alphaScale: 0.7, blurScale: 48 },
-	{ offsetScale: 4, alphaScale: 0.5, blurScale: 16 },
-	{ offsetScale: 2, alphaScale: 0.3, blurScale: 8 },
+	{ offsetScale: 8, alphaScale: 0.55, blurScale: 32 },
+	{ offsetScale: 3, alphaScale: 0.35, blurScale: 12 },
+	{ offsetScale: 1.5, alphaScale: 0.18, blurScale: 5 },
 ]);
 
 export const WEBCAM_SHADOW_LAYER_PROFILES: ReadonlyArray<ShadowLayerProfile> = Object.freeze([

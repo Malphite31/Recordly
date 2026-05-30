@@ -923,6 +923,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("request-save-before-close", listener);
 		return () => ipcRenderer.removeListener("request-save-before-close", listener);
 	},
+	onShowUnsavedChangesDialog: (callback: () => void) => {
+		ipcRenderer.on("show-unsaved-changes-dialog", callback);
+		return () => ipcRenderer.removeListener("show-unsaved-changes-dialog", callback);
+	},
+	sendUnsavedChangesResponse: (choice: "save" | "discard" | "cancel") => {
+		ipcRenderer.send("unsaved-changes-response", choice);
+	},
 	isNativeWindowsCaptureAvailable: () =>
 		ipcRenderer.invoke("is-native-windows-capture-available"),
 	muxNativeWindowsRecording: (expectedDurationMs?: number) =>

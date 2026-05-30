@@ -271,3 +271,11 @@
 
 
 
+
+/* Idle cursor auto-hide: hide the native OS cursor over the preview area and
+   all descendants (including the PixiJS canvas) so the animated custom cursor
+   overlay is the only cursor visible. */
+.recordly-hide-native-cursor,
+.recordly-hide-native-cursor * {
+	cursor: none !important;
+}

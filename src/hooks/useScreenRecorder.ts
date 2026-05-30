@@ -564,10 +564,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		const screenPermission = await window.electronAPI.getScreenRecordingPermissionStatus();
 		if (!screenPermission.success || screenPermission.status !== "granted") {
 			await window.electronAPI.openScreenRecordingPreferences();
-			alert(
+			toast.warning(
 				options.startup
 					? "Recordly needs Screen Recording permission before you start. System Settings has been opened. After enabling it, quit and reopen Recordly."
 					: "Screen Recording permission is still missing. System Settings has been opened again. Enable it, then quit and reopen Recordly before recording.",
+				{ duration: 10000 },
 			);
 			return false;
 		}
@@ -587,10 +588,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 
 		await window.electronAPI.openAccessibilityPreferences();
-		alert(
+		toast.warning(
 			options.startup
 				? "Recordly also needs Accessibility permission for cursor tracking. System Settings has been opened. After enabling it, quit and reopen Recordly."
 				: "Accessibility permission is still missing. System Settings has been opened again. Enable it, then quit and reopen Recordly before recording.",
+			{ duration: 10000 },
 		);
 
 		return false;
@@ -1400,7 +1402,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 					if (state.reason === "window-unavailable" && !hasPromptedForReselect.current) {
 						hasPromptedForReselect.current = true;
-						alert(state.message);
+						toast.warning(state.message, { duration: 8000 });
 						await window.electronAPI.openSourceSelector();
 					} else {
 						console.error(state.message);
@@ -1447,7 +1449,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			const selectedSource =
 				existingSource ?? (platform === "linux" ? LINUX_PORTAL_SOURCE : null);
 			if (!selectedSource) {
-				alert("Please select a source to record");
+				toast.error("Please select a source to record");
 				return;
 			}
 			// Persist the synthetic Linux portal sentinel to main so that the
@@ -1740,7 +1742,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							"System audio capture failed, falling back to video-only:",
 							audioError,
 						);
-						alert(
+						toast.warning(
 							"System audio is not available for this source. Recording will continue without system audio.",
 						);
 						setSystemAudioStatus("unavailable");
@@ -1780,7 +1782,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						);
 					} catch (audioError) {
 						console.warn("Failed to get microphone access:", audioError);
-						alert(
+						toast.warning(
 							"Microphone access was denied. Recording will continue without microphone audio.",
 						);
 						setMicrophoneEnabled(false);
@@ -2022,10 +2024,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			window.electronAPI?.setRecordingState(true);
 		} catch (error) {
 			console.error("Failed to start recording:", error);
-			alert(
+			toast.error(
 				error instanceof Error
 					? `Failed to start recording: ${error.message}`
 					: "Failed to start recording",
+				{ duration: 10000 },
 			);
 			setRecording(false);
 			try {

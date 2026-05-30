@@ -85,6 +85,8 @@ export interface EditorPreferences extends PersistedEditorControls {
 	autoApplyFreshRecordingAutoZooms: boolean;
 	whisperExecutablePath: string | null;
 	whisperModelPath: string | null;
+	cursorIdleHideDelayMs: number;
+	cursorIdleHideEnabled: boolean;
 }
 
 export const EDITOR_PREFERENCES_STORAGE_KEY = "recordly.editor.preferences";
@@ -145,6 +147,8 @@ export const DEFAULT_EDITOR_PREFERENCES: EditorPreferences = {
 	autoApplyFreshRecordingAutoZooms: true,
 	whisperExecutablePath: null,
 	whisperModelPath: null,
+	cursorIdleHideDelayMs: 2000,
+	cursorIdleHideEnabled: false,
 };
 
 function normalizeBoolean(value: unknown, fallback: boolean): boolean {
@@ -425,6 +429,16 @@ export function normalizeEditorPreferences(
 		whisperExecutablePath:
 			normalizeNullablePath(raw.whisperExecutablePath) ?? fallback.whisperExecutablePath,
 		whisperModelPath: normalizeNullablePath(raw.whisperModelPath) ?? fallback.whisperModelPath,
+		cursorIdleHideDelayMs:
+			typeof raw.cursorIdleHideDelayMs === "number" &&
+			Number.isFinite(raw.cursorIdleHideDelayMs) &&
+			raw.cursorIdleHideDelayMs >= 500
+				? Math.round(raw.cursorIdleHideDelayMs)
+				: fallback.cursorIdleHideDelayMs,
+		cursorIdleHideEnabled: normalizeBoolean(
+			raw.cursorIdleHideEnabled,
+			fallback.cursorIdleHideEnabled,
+		),
 	};
 }
 

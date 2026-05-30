@@ -540,6 +540,10 @@ interface SettingsPanelProps {
 	onCursorClickBounceDurationChange?: (duration: number) => void;
 	cursorSway?: number;
 	onCursorSwayChange?: (amount: number) => void;
+	cursorIdleHideDelayMs?: number;
+	onCursorIdleHideDelayMsChange?: (delayMs: number) => void;
+	cursorIdleHideEnabled?: boolean;
+	onCursorIdleHideEnabledChange?: (enabled: boolean) => void;
 	borderRadius?: number;
 	onBorderRadiusChange?: (radius: number) => void;
 	webcam?: WebcamOverlaySettings;
@@ -925,6 +929,10 @@ export function SettingsPanel({
 	onCursorClickBounceDurationChange,
 	cursorSway = DEFAULT_CURSOR_SWAY,
 	onCursorSwayChange,
+	cursorIdleHideDelayMs = 2000,
+	onCursorIdleHideDelayMsChange,
+	cursorIdleHideEnabled = false,
+	onCursorIdleHideEnabledChange,
 	borderRadius = 12.5,
 	onBorderRadiusChange,
 	webcam,
@@ -3418,6 +3426,29 @@ export function SettingsPanel({
 									return parseFloat(text.replace(/×$/, ""));
 								}}
 							/>
+							<div className="flex items-center justify-between rounded-lg bg-foreground/[0.03] px-2.5 py-1.5">
+								<span className="text-[10px] text-muted-foreground">
+									{tSettings("effects.cursorIdleHideDelay", "Auto-hide cursor")}
+								</span>
+								<Switch
+									checked={cursorIdleHideEnabled}
+									onCheckedChange={onCursorIdleHideEnabledChange}
+									className="data-[state=checked]:bg-[#2563EB] scale-75"
+								/>
+							</div>
+							{cursorIdleHideEnabled && (
+								<SliderControl
+									label={tSettings("effects.cursorIdleHideDelayValue", "Hide after")}
+									value={cursorIdleHideDelayMs / 1000}
+									defaultValue={2}
+									min={0.5}
+									max={10}
+									step={0.5}
+									onChange={(v) => onCursorIdleHideDelayMsChange?.(Math.round(v * 1000))}
+									formatValue={(v) => `${v.toFixed(1)}s`}
+									parseInput={(text) => parseFloat(text.replace(/s$/i, "").trim())}
+								/>
+							)}
 							{showDevMotionControls ? (
 								<div className="rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2">
 									<div className="text-[10px] text-muted-foreground">

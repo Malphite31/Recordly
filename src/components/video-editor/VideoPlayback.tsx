@@ -53,6 +53,7 @@ import {
 	DEFAULT_CURSOR_CONFIG,
 	PixiCursorOverlay,
 	preloadCursorAssets,
+	isCursorIdleAtTime,
 } from "./videoPlayback/cursorRenderer";
 import { clamp01 } from "./videoPlayback/mathUtils";
 import {
@@ -352,6 +353,8 @@ interface VideoPlaybackProps {
 	onAnnotationSizeChange?: (id: string, size: { width: number; height: number }) => void;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	cursorIdleHideEnabled?: boolean;
+	cursorIdleHideDelayMs?: number;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -430,6 +433,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			onAnnotationSizeChange,
 			cursorTelemetry = [],
 			showCursor = false,
+			cursorIdleHideEnabled = false,
+			cursorIdleHideDelayMs = 2000,
 			cursorStyle = DEFAULT_CURSOR_STYLE,
 			cursorSize = DEFAULT_CURSOR_SIZE,
 			cursorSmoothing = DEFAULT_CURSOR_SMOOTHING,
@@ -554,6 +559,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const cursorEffectsCanvasRef = useRef<HTMLCanvasElement | null>(null);
 		const cursorTelemetryRef = useRef<CursorTelemetryPoint[]>([]);
 		const showCursorRef = useRef(showCursor);
+		const cursorIdleHideEnabledRef = useRef(cursorIdleHideEnabled);
+		const cursorIdleHideDelayMsRef = useRef(cursorIdleHideDelayMs);
+		// Smooth idle fade: 1 = fully visible, 0 = fully hidden. Animated each frame.
+		const cursorIdleAlphaRef = useRef(1);
 		const cursorSizeRef = useRef(cursorSize);
 		const cursorStyleRef = useRef(cursorStyle);
 		const cursorSmoothingRef = useRef(cursorSmoothing);
@@ -1040,8 +1049,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			enablePitchPreservingPlayback(video);
 			const nextVolume = Math.max(0, Math.min(1, volume));
 			video.volume = nextVolume;
-			video.muted = nextVolume <= 0.001;
-		}, [volume, videoPath]);
+			// Never mute via the muted property — use volume=0 instead.
+			// Setting muted=true in production can get "stuck" due to React's
+			// attribute reconciliation and prevent audio from ever playing.
+			video.muted = false;
+		}, [volume, videoPath, videoReady]);
 
 		useEffect(() => {
 			layoutVideoContentRef.current = layoutVideoContent;
@@ -1505,7 +1517,19 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
 		useEffect(() => {
 			showCursorRef.current = showCursor;
-		}, [showCursor]);
+			cursorIdleHideEnabledRef.current = cursorIdleHideEnabled;
+			cursorIdleHideDelayMsRef.current = cursorIdleHideDelayMs;
+			// Reset idle alpha when feature is toggled off so cursor reappears instantly
+			if (!cursorIdleHideEnabled) {
+				cursorIdleAlphaRef.current = 1;
+				if (cursorOverlayRef.current) {
+					cursorOverlayRef.current.container.alpha = 1;
+					cursorOverlayRef.current.container.scale.set(1);
+					cursorOverlayRef.current.container.pivot.set(0, 0);
+					cursorOverlayRef.current.container.position.set(0, 0);
+				}
+			}
+		}, [showCursor, cursorIdleHideEnabled, cursorIdleHideDelayMs]);
 
 		useEffect(() => {
 			cursorStyleRef.current = cursorStyle;
@@ -1961,12 +1985,17 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
 			const source = VideoSource.from(video);
+			if ("autoMute" in source) {
+				(source as any).autoMute = false;
+			}
 			if ("autoPlay" in source) {
 				(source as { autoPlay?: boolean }).autoPlay = false;
 			}
 			if ("autoUpdate" in source) {
 				(source as { autoUpdate?: boolean }).autoUpdate = true;
 			}
+			video.muted = false;
+			video.volume = Math.max(0, Math.min(1, volume));
 			const videoTexture = Texture.from(source);
 
 			const videoSprite = new Sprite(videoTexture);
@@ -2257,6 +2286,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				const cursorOverlay = cursorOverlayRef.current;
 				if (cursorOverlay) {
 					const telemetry = cursorTelemetryRef.current;
+					const isIdle = cursorIdleHideEnabledRef.current && isCursorIdleAtTime(telemetry, timeMs, cursorIdleHideDelayMsRef.current);
+
+					// Always pass showCursor=true so the overlay positions itself;
+					// we control visibility via smooth alpha/scale animation below.
 					cursorOverlay.update(
 						telemetry,
 						timeMs,
@@ -2264,6 +2297,41 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						showCursorRef.current,
 						!isPlayingRef.current || isSeekingRef.current,
 					);
+
+					// Smooth fade + shrink: animate alpha toward target (0 when idle, 1 when active).
+					// Speed: ~500ms fade-out, ~150ms fade-in.
+					const targetAlpha = isIdle ? 0 : 1;
+					const currentAlpha = cursorIdleAlphaRef.current;
+					if (currentAlpha !== targetAlpha) {
+						const fadeSpeed = targetAlpha === 0
+							? deltaMs / 500  // fade out over ~500ms
+							: deltaMs / 150; // fade in over ~150ms
+						const nextAlpha = targetAlpha === 0
+							? Math.max(0, currentAlpha - fadeSpeed)
+							: Math.min(1, currentAlpha + fadeSpeed);
+						cursorIdleAlphaRef.current = nextAlpha;
+						cursorOverlay.container.alpha = nextAlpha;
+						// Scale down to 20% as it fades — pivot at cursor position so it
+						// shrinks in-place rather than toward the canvas origin.
+						const scale = 0.2 + nextAlpha * 0.8;
+						const snapshot = cursorOverlay.getSmoothedCursorSnapshot();
+						const mask = baseMaskRef.current;
+						if (snapshot && mask) {
+							const pivotX = mask.x + snapshot.cx * mask.width;
+							const pivotY = mask.y + snapshot.cy * mask.height;
+							cursorOverlay.container.pivot.set(pivotX, pivotY);
+							cursorOverlay.container.position.set(pivotX, pivotY);
+						}
+						cursorOverlay.container.scale.set(scale);
+					} else {
+						cursorOverlay.container.alpha = currentAlpha;
+						if (currentAlpha === 1) {
+							// Fully visible — reset pivot/scale so normal positioning is restored
+							cursorOverlay.container.pivot.set(0, 0);
+							cursorOverlay.container.position.set(0, 0);
+							cursorOverlay.container.scale.set(1);
+						}
+					}
 
 					smoothedCursorForHooks = mapSmoothedCursorToCanvasNormalized(
 						cursorOverlay.getSmoothedCursorSnapshot(),
@@ -2683,7 +2751,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 				: { background: resolvedWallpaper || "" };
 		const fallbackVideoClassName = pixiRendererError
 			? "absolute inset-0 h-full w-full object-cover"
-			: "pointer-events-none absolute left-0 top-0 h-px w-px opacity-0";
+			: "pointer-events-none absolute left-0 top-0 w-full h-full opacity-[0.001] z-[-10]";
 		const hasRendererFallback = Boolean(pixiRendererError);
 
 		const nativeAspectRatio = (() => {
@@ -2971,7 +3039,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					ref={videoRef}
 					src={videoPath}
 					className={fallbackVideoClassName}
-					preload="metadata"
+					preload="auto"
 					playsInline
 					aria-hidden="true"
 					onLoadedMetadata={handleLoadedMetadata}
@@ -2990,12 +3058,6 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 									: code === MediaError.MEDIA_ERR_DECODE
 										? "decode error"
 										: msg || `code ${code ?? "unknown"}`;
-						console.error(
-							"[VideoPlayback] Video load error:",
-							detail,
-							"src:",
-							videoPath,
-						);
 						onError(`Failed to load video (${detail})`);
 					}}
 				/>

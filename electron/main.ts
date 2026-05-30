@@ -5,7 +5,6 @@ import {
 	app,
 	BrowserWindow,
 	desktopCapturer,
-	dialog,
 	ipcMain,
 	Menu,
 	Notification,
@@ -820,26 +819,22 @@ function createEditorWindowWrapper() {
 
 		event.preventDefault();
 
-		const choice = dialog.showMessageBoxSync(editorWindow, {
-			type: "warning",
-			buttons: ["Save & Close", "Discard & Close", "Cancel"],
-			defaultId: 0,
-			cancelId: 2,
-			title: "Unsaved Changes",
-			message: "You have unsaved changes.",
-			detail: "Do you want to save your project before closing?",
+		// Ask the renderer to show a custom in-app modal instead of the native
+		// OS dialog. The renderer replies via "unsaved-changes-response".
+		editorWindow.webContents.send("show-unsaved-changes-dialog");
+		ipcMain.once("unsaved-changes-response", (_event, choice: "save" | "discard" | "cancel") => {
+			if (choice === "save") {
+				editorWindow.webContents.send("request-save-before-close");
+				ipcMain.once("save-before-close-done", (_ev, saved: boolean) => {
+					if (saved) {
+						closeEditorWindowBypassingUnsavedPrompt(editorWindow);
+					}
+				});
+			} else if (choice === "discard") {
+				closeEditorWindowBypassingUnsavedPrompt(editorWindow);
+			}
+			// "cancel" → do nothing, window stays open
 		});
-
-		if (choice === 0) {
-			editorWindow.webContents.send("request-save-before-close");
-			ipcMain.once("save-before-close-done", (_event, saved: boolean) => {
-				if (saved) {
-					closeEditorWindowBypassingUnsavedPrompt(editorWindow);
-				}
-			});
-		} else if (choice === 1) {
-			closeEditorWindowBypassingUnsavedPrompt(editorWindow);
-		}
 	});
 
 	return editorWindow;

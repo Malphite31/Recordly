@@ -26,6 +26,10 @@ let sourceListCache:
 	  }
 	| null = null;
 
+// Tracks whether a source was selected in the current open-source-selector session
+// so we know not to restore the editor window on cancel.
+let pendingEditorWindowForSourceSelector: BrowserWindow | null = null;
+
 function normalizeDesktopSourceName(value: string) {
 	return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -309,6 +313,9 @@ export function registerSourceHandlers({
 		setSelectedSource(source);
 		broadcastSelectedSourceChange();
 		stopWindowBoundsCapture();
+		// Source was selected — clear the pending editor so it won't be
+		// restored when the source selector closes (recording is starting).
+		pendingEditorWindowForSourceSelector = null;
 		const sourceSelectorWin = getSourceSelectorWindow();
 		if (sourceSelectorWin) {
 			sourceSelectorWin.close();
@@ -522,13 +529,38 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
     return selectedSource
   })
 
-  ipcMain.handle('open-source-selector', () => {
+  ipcMain.handle('open-source-selector', (event) => {
     const sourceSelectorWin = getSourceSelectorWindow()
     if (sourceSelectorWin) {
       sourceSelectorWin.focus()
       return
     }
-    createSourceSelectorWindow()
+
+    // Hide the editor window that triggered this so it doesn't sit frozen
+    // behind the always-on-top source selector.
+    const callerWindow = BrowserWindow.fromWebContents(event.sender)
+    const isCallerEditor =
+      callerWindow &&
+      !callerWindow.isDestroyed() &&
+      callerWindow.webContents.getURL().includes('windowType=editor')
+
+    if (isCallerEditor && callerWindow) {
+      callerWindow.hide()
+      pendingEditorWindowForSourceSelector = callerWindow
+    }
+
+    const newSelectorWin = createSourceSelectorWindow()
+
+    // If the source selector is closed without selecting a source (user
+    // cancelled), show the editor window again.
+    newSelectorWin.once('closed', () => {
+      const editorWin = pendingEditorWindowForSourceSelector
+      pendingEditorWindowForSourceSelector = null
+      if (editorWin && !editorWin.isDestroyed()) {
+        editorWin.show()
+        editorWin.focus()
+      }
+    })
   })
   ipcMain.handle('switch-to-editor', () => {
     console.log('[switch-to-editor] Opening editor window')

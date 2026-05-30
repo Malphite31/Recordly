@@ -14,7 +14,6 @@ import {
 	Play,
 	Plus,
 	PuzzlePiece,
-	Record,
 	ArrowClockwise as Redo2,
 	Scissors,
 	SkipBack,
@@ -463,6 +462,7 @@ export default function VideoEditor() {
 	const [sessionNativeCaptureUnavailable, setSessionNativeCaptureUnavailable] = useState(false);
 	const [nativeCaptureUnavailableModalOpen, setNativeCaptureUnavailableModalOpen] =
 		useState(false);
+	const [unsavedChangesModalOpen, setUnsavedChangesModalOpen] = useState(false);
 	const [zoomSmoothness, setZoomSmoothness] = useState(0.5);
 	const [zoomClassicMode, setZoomClassicMode] = useState(false);
 	const [cursorMotionBlur, setCursorMotionBlur] = useState(
@@ -475,6 +475,12 @@ export default function VideoEditor() {
 		initialEditorPreferences.cursorClickBounceDuration,
 	);
 	const [cursorSway, setCursorSway] = useState(initialEditorPreferences.cursorSway);
+	const [cursorIdleHideDelayMs, setCursorIdleHideDelayMs] = useState(
+		initialEditorPreferences.cursorIdleHideDelayMs ?? 2000,
+	);
+	const [cursorIdleHideEnabled, setCursorIdleHideEnabled] = useState(
+		initialEditorPreferences.cursorIdleHideEnabled ?? false,
+	);
 	const [borderRadius, setBorderRadius] = useState(initialEditorPreferences.borderRadius);
 	const [padding, setPadding] = useState(initialEditorPreferences.padding);
 	const [frame, setFrame] = useState<string | null>(initialEditorPreferences.frame);
@@ -664,15 +670,16 @@ export default function VideoEditor() {
 		window.addEventListener("mouseup", handleMouseUp);
 	}, [timelineHeight]);
 
-	const handleNewRecording = useCallback(() => {
-		window.electronAPI?.openSourceSelector?.();
-	}, []);
-
 	useEffect(() => {
 		void window.electronAPI?.getPlatform?.()?.then((platform) => {
 			setAppPlatform(platform);
 		});
 	}, []);
+
+	// Persist cursor idle hide settings whenever they change
+	useEffect(() => {
+		saveEditorPreferences({ cursorIdleHideDelayMs, cursorIdleHideEnabled });
+	}, [cursorIdleHideDelayMs, cursorIdleHideEnabled]);
 
 	useEffect(() => {
 		autoSuggestedVideoPathRef.current = null;
@@ -1137,6 +1144,8 @@ export default function VideoEditor() {
 					previewHeight,
 					cursorTelemetry,
 					showCursor: effectiveShowCursor,
+					cursorIdleHideEnabled,
+					cursorIdleHideDelayMs,
 					cursorStyle,
 					cursorSize,
 					cursorSmoothing,
@@ -2834,6 +2843,13 @@ export default function VideoEditor() {
 		return () => cleanup?.();
 	}, [saveProject]);
 
+	useEffect(() => {
+		const cleanup = window.electronAPI.onShowUnsavedChangesDialog?.(() => {
+			setUnsavedChangesModalOpen(true);
+		});
+		return () => cleanup?.();
+	}, []);
+
 	const handleSaveProject = useCallback(async () => {
 		await saveProject(false);
 	}, [saveProject]);
@@ -4180,6 +4196,8 @@ export default function VideoEditor() {
 						zoomRegions: effectiveZoomRegions,
 						cursorTelemetry: effectiveCursorTelemetry,
 						showCursor: effectiveShowCursor,
+						cursorIdleHideEnabled,
+						cursorIdleHideDelayMs,
 						cursorStyle,
 						cursorSize,
 						cursorSmoothing,
@@ -4358,6 +4376,8 @@ export default function VideoEditor() {
 						zoomRegions: effectiveZoomRegions,
 						cursorTelemetry: effectiveCursorTelemetry,
 						showCursor: effectiveShowCursor,
+						cursorIdleHideEnabled,
+						cursorIdleHideDelayMs,
 						cursorStyle,
 						cursorSize,
 						cursorSmoothing,
@@ -5017,6 +5037,62 @@ export default function VideoEditor() {
 			}}
 		/>
 	);
+	const unsavedChangesDialog = (
+		<Dialog
+			open={unsavedChangesModalOpen}
+			onOpenChange={(open) => {
+				if (!open) {
+					setUnsavedChangesModalOpen(false);
+					window.electronAPI.sendUnsavedChangesResponse?.("cancel");
+				}
+			}}
+		>
+			<DialogContent className="max-w-sm bg-editor-dialog border-foreground/10 text-foreground">
+				<DialogHeader>
+					<DialogTitle>{t("editor.unsavedChanges.title", "Unsaved Changes")}</DialogTitle>
+					<DialogDescription className="text-muted-foreground">
+						{t(
+							"editor.unsavedChanges.description",
+							"Do you want to save your project before closing?",
+						)}
+					</DialogDescription>
+				</DialogHeader>
+				<DialogFooter className="flex-col gap-2 sm:flex-col">
+					<Button
+						className="w-full"
+						onClick={async () => {
+							setUnsavedChangesModalOpen(false);
+							const saved = await saveProject(false);
+							window.electronAPI.sendUnsavedChangesResponse?.(saved ? "save" : "cancel");
+						}}
+					>
+						{t("editor.unsavedChanges.save", "Save & Close")}
+					</Button>
+					<Button
+						variant="outline"
+						className="w-full"
+						onClick={() => {
+							setUnsavedChangesModalOpen(false);
+							window.electronAPI.sendUnsavedChangesResponse?.("discard");
+						}}
+					>
+						{t("editor.unsavedChanges.discard", "Discard & Close")}
+					</Button>
+					<Button
+						variant="ghost"
+						className="w-full"
+						onClick={() => {
+							setUnsavedChangesModalOpen(false);
+							window.electronAPI.sendUnsavedChangesResponse?.("cancel");
+						}}
+					>
+						{t("editor.unsavedChanges.cancel", "Cancel")}
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+
 	const nativeCaptureUnavailableDialog = (
 		<Dialog
 			open={nativeCaptureUnavailableModalOpen}
@@ -5052,6 +5128,7 @@ export default function VideoEditor() {
 				<div className="text-foreground">Loading video...</div>
 				{projectBrowser}
 				{nativeCaptureUnavailableDialog}
+				{unsavedChangesDialog}
 				<Toaster className="pointer-events-auto" />
 			</div>
 		);
@@ -5072,6 +5149,7 @@ export default function VideoEditor() {
 				</div>
 				{projectBrowser}
 				{nativeCaptureUnavailableDialog}
+				{unsavedChangesDialog}
 				<Toaster className="pointer-events-auto" />
 			</div>
 		);
@@ -5098,18 +5176,6 @@ export default function VideoEditor() {
 						aria-label={t("editor.project.projects", "Open projects")}
 					>
 						<FolderOpen className="h-4 w-4" />
-					</Button>
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						onClick={handleNewRecording}
-						className="inline-flex h-8 items-center gap-1.5 rounded-[5px] border border-[#f43f5e]/20 bg-[#f43f5e]/10 px-2.5 text-[#f43f5e] transition-colors hover:bg-[#f43f5e]/20 hover:text-[#f43f5e]"
-						title="New Recording"
-						aria-label="New Recording"
-					>
-						<Record className="h-3.5 w-3.5" weight="fill" />
-						<span className="text-xs font-semibold tracking-tight">New Recording</span>
 					</Button>
 					<DiscordLinkButton />
 					<FeedbackDialog />
@@ -5780,6 +5846,10 @@ export default function VideoEditor() {
 								onCursorClickBounceDurationChange={setCursorClickBounceDuration}
 								cursorSway={cursorSway}
 								onCursorSwayChange={setCursorSway}
+								cursorIdleHideDelayMs={cursorIdleHideDelayMs}
+								onCursorIdleHideDelayMsChange={setCursorIdleHideDelayMs}
+								cursorIdleHideEnabled={cursorIdleHideEnabled}
+								onCursorIdleHideEnabledChange={setCursorIdleHideEnabled}
 								borderRadius={borderRadius}
 								onBorderRadiusChange={setBorderRadius}
 								webcam={webcam}
@@ -5885,8 +5955,11 @@ export default function VideoEditor() {
 								</div>
 								{/* Video preview */}
 								<div
-									className="flex w-full min-h-0 flex-1 items-stretch"
-									style={{ flex: "1 1 auto", margin: "6px 0 0" }}
+									className="flex w-full min-h-0 flex-1 items-stretch relative"
+									style={{
+										flex: "1 1 auto",
+										margin: "6px 0 0",
+									}}
 								>
 									<div className="flex min-w-0 flex-1 items-center justify-center px-1">
 										<div
@@ -5999,8 +6072,9 @@ export default function VideoEditor() {
 													cursorClickBounceDuration
 												}
 												cursorSway={cursorSway}
+												cursorIdleHideEnabled={cursorIdleHideEnabled}
+												cursorIdleHideDelayMs={cursorIdleHideDelayMs}
 												volume={
-													audio.shouldMutePreviewVideo ||
 													audio.isCurrentClipMuted
 														? 0
 														: Math.max(
@@ -6357,6 +6431,7 @@ export default function VideoEditor() {
 
 			{projectBrowser}
 			{nativeCaptureUnavailableDialog}
+			{unsavedChangesDialog}
 
 			<Toaster className="pointer-events-auto" />
 		</div>

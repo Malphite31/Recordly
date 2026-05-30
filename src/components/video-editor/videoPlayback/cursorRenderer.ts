@@ -1349,3 +1349,40 @@ export function drawCursorOnCanvas(
 
 	ctx.restore();
 }
+
+export function isCursorIdleAtTime(
+	samples: CursorTelemetryPoint[],
+	timeMs: number,
+	delayMs: number,
+): boolean {
+	if (!samples || samples.length <= 1) return false;
+
+	// Find the latest sample at or before timeMs
+	let latestSampleIndex = -1;
+	for (let i = 0; i < samples.length; i++) {
+		if (samples[i].timeMs <= timeMs) {
+			latestSampleIndex = i;
+		} else {
+			break;
+		}
+	}
+
+	if (latestSampleIndex === -1) {
+		return false;
+	}
+
+	const latestSample = samples[latestSampleIndex];
+
+	// Find when the mouse last moved.
+	let lastMoveTimeMs = latestSample.timeMs;
+	for (let i = latestSampleIndex - 1; i >= 0; i--) {
+		const s = samples[i];
+		if (Math.abs(s.cx - latestSample.cx) > 0.0005 || Math.abs(s.cy - latestSample.cy) > 0.0005) {
+			lastMoveTimeMs = samples[i + 1].timeMs;
+			break;
+		}
+	}
+
+	const idleDuration = timeMs - lastMoveTimeMs;
+	return idleDuration >= delayMs;
+}

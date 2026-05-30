@@ -206,8 +206,10 @@ export default function Item({
 					{showAudioWaveform && waveformPeaks && (
 						<AudioWaveform
 							peaks={waveformPeaks}
-							segmentStartMs={waveformSegmentSpan?.start ?? span.start}
-							segmentEndMs={waveformSegmentSpan?.end ?? span.end}
+							segmentStartMs={waveformSegmentSpan?.start ?? 0}
+							segmentEndMs={waveformSegmentSpan?.end ?? (span.end - span.start)}
+							itemSpanStartMs={span.start}
+							itemSpanEndMs={span.end}
 							gain={waveformGain}
 							normalize={waveformNormalize}
 							className="absolute inset-0 w-full h-full pointer-events-none opacity-70"

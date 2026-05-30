@@ -838,6 +838,8 @@ interface Window {
 		setAppSetting: (key: string, value: unknown) => boolean;
 		setHasUnsavedChanges: (hasChanges: boolean) => void;
 		onRequestSaveBeforeClose: (callback: () => Promise<boolean>) => () => void;
+		onShowUnsavedChangesDialog: (callback: () => void) => () => void;
+		sendUnsavedChangesResponse: (choice: "save" | "discard" | "cancel") => void;
 		isNativeWindowsCaptureAvailable: () => Promise<{ available: boolean }>;
 		muxNativeWindowsRecording: (expectedDurationMs?: number) => Promise<{
 			success: boolean;

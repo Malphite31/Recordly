@@ -126,6 +126,8 @@ interface VideoExporterConfig extends ExportConfig {
 	autoCaptionSettings?: AutoCaptionSettings;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	cursorIdleHideEnabled?: boolean;
+	cursorIdleHideDelayMs?: number;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -622,6 +624,8 @@ export class ModernVideoExporter {
 					previewHeight: this.config.previewHeight,
 					cursorTelemetry: this.config.cursorTelemetry,
 					showCursor: this.config.showCursor,
+					cursorIdleHideEnabled: this.config.cursorIdleHideEnabled,
+					cursorIdleHideDelayMs: this.config.cursorIdleHideDelayMs,
 					cursorStyle: this.config.cursorStyle,
 					cursorSize: this.config.cursorSize,
 					cursorSmoothing: this.config.cursorSmoothing,
@@ -2749,9 +2753,11 @@ export class ModernVideoExporter {
 			if (this.nativeEncoderError) throw this.nativeEncoderError;
 		}
 		const canvas = this.renderer!.getCanvas();
+		// @ts-expect-error - colorSpace not in TypeScript definitions but works at runtime
 		const frame = new VideoFrame(canvas, {
 			timestamp,
 			duration: frameDuration,
+			colorSpace: DEFAULT_EXPORT_VIDEO_COLOR_SPACE,
 		});
 		this.nativeH264Encoder.encode(frame, { keyFrame: frameIndex % 300 === 0 });
 		frame.close();

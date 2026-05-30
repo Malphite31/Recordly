@@ -69,7 +69,6 @@ interface TimelineCanvasProps {
 	showSourceAudioTrack?: boolean;
 	liveSpanPreviewById?: Record<string, { start: number; end: number }>;
 	liveHiddenItemIds?: string[];
-	isLoading?: boolean;
 	/** Peaks for the webcam row waveform (uses sidecar audio). */
 	webcamWaveformPeaks?: AudioPeaksData | null;
 }
@@ -261,7 +260,6 @@ interface TimelineCanvasRowsProps {
 	onZoomRowMouseLeave: MouseEventHandler<HTMLDivElement>;
 	onZoomRowMouseDown: MouseEventHandler<HTMLDivElement>;
 	onZoomRowClick: MouseEventHandler<HTMLDivElement>;
-	isLoading?: boolean;
 	/** Peaks for the webcam row waveform (uses sidecar audio). */
 	webcamWaveformPeaks?: AudioPeaksData | null;
 }
@@ -279,7 +277,6 @@ interface ClipItemWithWaveformProps {
 	isSelected: boolean;
 	sourceAudioTrackSettings: SourceAudioTrackSetting;
 	onSelectClip?: (id: string | null) => void;
-	isLoading?: boolean;
 	/** Live span during drag — used to trim the waveform correctly. */
 	liveSpan?: { start: number; end: number };
 	/** Waveform peaks from the primary source audio track. */
@@ -291,7 +288,6 @@ function ClipItemWithWaveform({
 	isSelected,
 	sourceAudioTrackSettings,
 	onSelectClip,
-	isLoading = false,
 	liveSpan,
 	waveformPeaks,
 }: ClipItemWithWaveformProps) {
@@ -320,8 +316,6 @@ function ClipItemWithWaveform({
 			waveformGain={Math.max(0, Math.min(1, sourceAudioTrackSettings.volume))}
 			waveformNormalize={Boolean(sourceAudioTrackSettings.normalize)}
 			muted={item.muted}
-			isLoading={isLoading}
-			loadingLabel="Analyzing..."
 		>
 			{item.label}
 		</Item>
@@ -387,7 +381,6 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 	onZoomRowMouseLeave,
 	onZoomRowMouseDown,
 	onZoomRowClick,
-	isLoading = false,
 	webcamWaveformPeaks,
 }: TimelineCanvasRowsProps) {
 	const hiddenIds = useMemo(() => new Set(liveHiddenItemIds ?? []), [liveHiddenItemIds]);
@@ -457,7 +450,6 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 							isSelected={selectAllBlocksActive || item.id === selectedClipId}
 							sourceAudioTrackSettings={settings}
 							onSelectClip={onSelectClip}
-							isLoading={isLoading}
 							liveSpan={liveSpanPreviewById?.[item.id]}
 							waveformPeaks={primarySourceAudioTrack?.peaks ?? null}
 						/>
@@ -677,7 +669,6 @@ export default function TimelineCanvas({
 	showSourceAudioTrack = false,
 	liveSpanPreviewById,
 	liveHiddenItemIds,
-	isLoading = false,
 	webcamWaveformPeaks,
 }: TimelineCanvasProps) {
 	const { setTimelineRef, style, sidebarWidth, direction, range, valueToPixels, pixelsToValue } =
@@ -887,7 +878,6 @@ export default function TimelineCanvas({
 				onSeek={onSeek}
 				timelineRef={localTimelineRef}
 				keyframes={keyframes}
-				isLoading={isLoading}
 			/>
 			{canShowGhostPlayhead && (
 				<div
@@ -930,7 +920,6 @@ export default function TimelineCanvas({
 					onZoomRowMouseLeave={handleZoomRowMouseLeave}
 					onZoomRowMouseDown={handleZoomRowMouseDown}
 					onZoomRowClick={handleZoomRowClick}
-					isLoading={isLoading}
 					webcamWaveformPeaks={webcamWaveformPeaks}
 				/>
 			</div>

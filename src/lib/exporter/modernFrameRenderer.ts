@@ -138,6 +138,8 @@ interface FrameRenderConfig {
 	previewHeight?: number;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	cursorIdleHideEnabled?: boolean;
+	cursorIdleHideDelayMs?: number;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -335,6 +337,79 @@ function configureHighQuality2DContext(
 	return context;
 }
 
+/**
+ * Creates a 2D canvas with explicit sRGB color space so that all intermediate
+ * compositing canvases stay in the same color space as the Pixi WebGL canvas.
+ * Without this, on systems where the default canvas color space is display-p3
+ * (e.g. macOS with a wide-gamut display), colors shift when the Pixi canvas is
+ * drawn into a plain `getContext("2d")` canvas.
+ */
+function createSrgbCanvas(width: number, height: number): {
+	canvas: HTMLCanvasElement;
+	context: CanvasRenderingContext2D;
+} | null {
+	const canvas = document.createElement("canvas");
+	canvas.width = Math.max(1, Math.ceil(width));
+	canvas.height = Math.max(1, Math.ceil(height));
+
+	const context = configureHighQuality2DContext(canvas.getContext("2d", { willReadFrequently: false }))
+		?? configureHighQuality2DContext(canvas.getContext("2d"));
+
+	if (!context) return null;
+	return { canvas, context };
+}
+
+/**
+ * Draws a soft drop-shadow squircle using the canvas native `shadowBlur`.
+ * The native shadow is rendered at full floating-point precision internally
+ * by the browser, avoiding the 8-bit banding that CSS `filter: blur()` produces
+ * at large radii. The shape is drawn off-screen (transparent fill) so only the
+ * shadow is visible.
+ */
+function drawSoftShadow(
+	ctx: CanvasRenderingContext2D,
+	options: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		radius: number;
+		blur: number;
+		alpha: number;
+	},
+): void {
+	const { x, y, width, height, radius, blur, alpha } = options;
+
+	if (alpha <= 0 || width <= 0 || height <= 0) return;
+
+	ctx.save();
+
+	if (blur <= 0) {
+		ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+		drawSquircleOnCanvas(ctx, { x, y, width, height, radius });
+		ctx.fill();
+	} else {
+		// Use native shadowBlur — rendered at full precision, no banding.
+		// Draw the shape far off-canvas so only the shadow bleeds into view.
+		const offscreenOffset = (ctx.canvas.width + ctx.canvas.height) * 2;
+		ctx.shadowColor = `rgba(0,0,0,${alpha})`;
+		ctx.shadowBlur = blur;
+		ctx.shadowOffsetX = offscreenOffset;
+		ctx.shadowOffsetY = 0;
+		ctx.fillStyle = "rgba(0,0,0,0.001)"; // near-transparent fill, shadow is what matters
+		drawSquircleOnCanvas(ctx, {
+			x: x - offscreenOffset,
+			y,
+			width,
+			height,
+			radius,
+		});
+		ctx.fill();
+	}
+
+	ctx.restore();
+}
+
 function drawSourceCoverToCanvas(
 	ctx: CanvasRenderingContext2D,
 	source: CanvasImageSource,
@@ -392,6 +467,70 @@ function clampUnitInterval(value: number): number {
 
 function areNearlyEqual(first: number, second: number, epsilon = 0.01): boolean {
 	return Math.abs(first - second) <= epsilon;
+}
+
+/**
+ * Computes a smooth idle alpha for export rendering.
+ * Since export has no real-time delta, we derive the alpha from how long
+ * the cursor has been idle: fade starts at delayMs, completes 500ms later.
+ */
+function computeExportCursorIdleAlpha(
+	telemetry: CursorTelemetryPoint[],
+	timeMs: number,
+	delayMs: number,
+): number {
+	if (!telemetry || telemetry.length <= 1) return 1;
+
+	// Find the last sample at or before timeMs
+	let latestIndex = -1;
+	for (let i = 0; i < telemetry.length; i++) {
+		if (telemetry[i].timeMs <= timeMs) latestIndex = i;
+		else break;
+	}
+	if (latestIndex < 0) return 1;
+
+	const latest = telemetry[latestIndex];
+	let lastMoveTimeMs = latest.timeMs;
+	for (let i = latestIndex - 1; i >= 0; i--) {
+		const s = telemetry[i];
+		if (Math.abs(s.cx - latest.cx) > 0.0005 || Math.abs(s.cy - latest.cy) > 0.0005) {
+			lastMoveTimeMs = telemetry[i + 1].timeMs;
+			break;
+		}
+	}
+
+	const idleDuration = timeMs - lastMoveTimeMs;
+	if (idleDuration < delayMs) return 1; // not yet idle
+	const fadeDuration = 500; // ms to fully fade out
+	const fadeProgress = Math.min(1, (idleDuration - delayMs) / fadeDuration);
+	return 1 - fadeProgress; // 1 → 0
+}
+
+/**
+ * Applies smooth idle fade+shrink to the cursor overlay container for export.
+ * Uses pivot-based scaling so the cursor shrinks toward its own center.
+ */
+function applyExportCursorIdleAnimation(
+	overlay: PixiCursorOverlay,
+	alpha: number,
+	viewport: { x: number; y: number; width: number; height: number },
+): void {
+	overlay.container.alpha = alpha;
+	if (alpha >= 1) {
+		overlay.container.scale.set(1);
+		overlay.container.pivot.set(0, 0);
+		overlay.container.position.set(0, 0);
+		return;
+	}
+	const scale = 0.2 + alpha * 0.8;
+	const snapshot = overlay.getSmoothedCursorSnapshot();
+	if (snapshot) {
+		const pivotX = viewport.x + snapshot.cx * viewport.width;
+		const pivotY = viewport.y + snapshot.cy * viewport.height;
+		overlay.container.pivot.set(pivotX, pivotY);
+		overlay.container.position.set(pivotX, pivotY);
+	}
+	overlay.container.scale.set(scale);
 }
 
 // Renders video frames with all effects directly into a GPU-backed Pixi scene for export.
@@ -547,10 +686,11 @@ export class FrameRenderer {
 				colorSpace?: string;
 			};
 			if ("colorSpace" in exportCanvas) {
-				exportCanvas.colorSpace = "srgb";
+				// Leave colorSpace as default — forcing sRGB causes color shifts
+				// when compositing with the VideoFrame bt709 pipeline.
 			}
-		} catch (error) {
-			console.warn("[FrameRenderer] colorSpace not supported on this platform:", error);
+		} catch {
+			// ignore
 		}
 
 		const application = await this.createPixiApplication(canvas);
@@ -785,7 +925,10 @@ export class FrameRenderer {
 		layer.canvas = document.createElement("canvas");
 		layer.canvas.width = targetWidth;
 		layer.canvas.height = targetHeight;
-		layer.context = configureHighQuality2DContext(layer.canvas.getContext("2d"));
+		// Use sRGB so shadow alpha blending stays in the same color space as the
+		// rest of the composited scene.
+		layer.context =
+			configureHighQuality2DContext(layer.canvas.getContext("2d"));
 
 		if (!layer.context) {
 			throw new Error("Failed to create shadow export canvas");
@@ -835,18 +978,16 @@ export class FrameRenderer {
 		}
 
 		layer.context.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-		layer.context.save();
-		layer.context.filter = options.blur > 0 ? `blur(${options.blur}px)` : "none";
-		layer.context.fillStyle = `rgba(0, 0, 0, ${options.alpha})`;
-		drawSquircleOnCanvas(layer.context, {
+
+		drawSoftShadow(layer.context, {
 			x: padding,
 			y: padding + options.offsetY,
 			width: options.width,
 			height: options.height,
 			radius: options.radius,
+			blur: options.blur,
+			alpha: options.alpha,
 		});
-		layer.context.fill();
-		layer.context.restore();
 
 		layer.sprite.position.set(options.x - padding, options.y - padding);
 		layer.textureSource?.update();
@@ -1480,19 +1621,12 @@ export class FrameRenderer {
 			return this.exportCompositeCanvas;
 		}
 
-		const canvas = document.createElement("canvas");
-		canvas.width = targetWidth;
-		canvas.height = targetHeight;
-
-		const context = configureHighQuality2DContext(canvas.getContext("2d"));
-		if (!context) {
+		const result = createSrgbCanvas(targetWidth, targetHeight);
+		if (!result) {
 			return null;
 		}
 
-		this.exportCompositeCanvas = {
-			canvas,
-			context,
-		};
+		this.exportCompositeCanvas = result;
 
 		return this.exportCompositeCanvas;
 	}
@@ -1509,19 +1643,12 @@ export class FrameRenderer {
 			return this.temporalCompositeCanvas;
 		}
 
-		const canvas = document.createElement("canvas");
-		canvas.width = targetWidth;
-		canvas.height = targetHeight;
-
-		const context = configureHighQuality2DContext(canvas.getContext("2d"));
-		if (!context) {
+		const result = createSrgbCanvas(targetWidth, targetHeight);
+		if (!result) {
 			return null;
 		}
 
-		this.temporalCompositeCanvas = {
-			canvas,
-			context,
-		};
+		this.temporalCompositeCanvas = result;
 
 		return this.temporalCompositeCanvas;
 	}
@@ -2986,6 +3113,14 @@ export class FrameRenderer {
 				this.config.showCursor ?? true,
 				false,
 			);
+			const idleAlpha = this.config.cursorIdleHideEnabled
+				? computeExportCursorIdleAlpha(
+					this.config.cursorTelemetry ?? [],
+					cursorTimeMs,
+					this.config.cursorIdleHideDelayMs ?? 2000,
+				)
+				: 1;
+			applyExportCursorIdleAnimation(this.cursorOverlay, idleAlpha, layoutCache.maskRect);
 		}
 
 		this.updateAnimationState(timeMs);
@@ -3235,6 +3370,14 @@ export class FrameRenderer {
 				this.config.showCursor ?? true,
 				false,
 			);
+			const idleAlpha = this.config.cursorIdleHideEnabled
+				? computeExportCursorIdleAlpha(
+					this.config.cursorTelemetry ?? [],
+					cursorTimeMs,
+					this.config.cursorIdleHideDelayMs ?? 2000,
+				)
+				: 1;
+			applyExportCursorIdleAnimation(this.cursorOverlay, idleAlpha, layoutCache.maskRect);
 		}
 
 		this.updateAnimationState(timeMs);

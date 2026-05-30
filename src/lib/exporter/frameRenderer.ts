@@ -118,6 +118,8 @@ interface FrameRenderConfig {
 	previewHeight?: number;
 	cursorTelemetry?: CursorTelemetryPoint[];
 	showCursor?: boolean;
+	cursorIdleHideEnabled?: boolean;
+	cursorIdleHideDelayMs?: number;
 	cursorStyle?: CursorStyle;
 	cursorSize?: number;
 	cursorSmoothing?: number;
@@ -251,6 +253,57 @@ function configureHighQuality2DContext(
 }
 
 // Renders video frames with all effects (background, zoom, crop, blur, shadow) to an offscreen canvas for export.
+
+function computeExportCursorIdleAlpha(
+	telemetry: CursorTelemetryPoint[],
+	timeMs: number,
+	delayMs: number,
+): number {
+	if (!telemetry || telemetry.length <= 1) return 1;
+	let latestIndex = -1;
+	for (let i = 0; i < telemetry.length; i++) {
+		if (telemetry[i].timeMs <= timeMs) latestIndex = i;
+		else break;
+	}
+	if (latestIndex < 0) return 1;
+	const latest = telemetry[latestIndex];
+	let lastMoveTimeMs = latest.timeMs;
+	for (let i = latestIndex - 1; i >= 0; i--) {
+		const s = telemetry[i];
+		if (Math.abs(s.cx - latest.cx) > 0.0005 || Math.abs(s.cy - latest.cy) > 0.0005) {
+			lastMoveTimeMs = telemetry[i + 1].timeMs;
+			break;
+		}
+	}
+	const idleDuration = timeMs - lastMoveTimeMs;
+	if (idleDuration < delayMs) return 1;
+	const fadeDuration = 500;
+	const fadeProgress = Math.min(1, (idleDuration - delayMs) / fadeDuration);
+	return 1 - fadeProgress;
+}
+
+function applyExportCursorIdleAnimation(
+	overlay: PixiCursorOverlay,
+	alpha: number,
+	viewport: { x: number; y: number; width: number; height: number },
+): void {
+	overlay.container.alpha = alpha;
+	if (alpha >= 1) {
+		overlay.container.scale.set(1);
+		overlay.container.pivot.set(0, 0);
+		overlay.container.position.set(0, 0);
+		return;
+	}
+	const scale = 0.2 + alpha * 0.8;
+	const snapshot = overlay.getSmoothedCursorSnapshot();
+	if (snapshot) {
+		const pivotX = viewport.x + snapshot.cx * viewport.width;
+		const pivotY = viewport.y + snapshot.cy * viewport.height;
+		overlay.container.pivot.set(pivotX, pivotY);
+		overlay.container.position.set(pivotX, pivotY);
+	}
+	overlay.container.scale.set(scale);
+}
 
 export class FrameRenderer {
 	private app: Application | null = null;
@@ -1634,6 +1687,14 @@ export class FrameRenderer {
 				this.config.showCursor ?? true,
 				false,
 			);
+			const idleAlpha = this.config.cursorIdleHideEnabled
+				? computeExportCursorIdleAlpha(
+					this.config.cursorTelemetry ?? [],
+					cursorTimeMs,
+					this.config.cursorIdleHideDelayMs ?? 2000,
+				)
+				: 1;
+			applyExportCursorIdleAnimation(this.cursorOverlay, idleAlpha, layoutCache.maskRect);
 		}
 
 		const smoothedCursor = mapSmoothedCursorToCanvasNormalized(
@@ -2122,6 +2183,14 @@ export class FrameRenderer {
 				this.config.showCursor ?? true,
 				false,
 			);
+			const idleAlpha = this.config.cursorIdleHideEnabled
+				? computeExportCursorIdleAlpha(
+					this.config.cursorTelemetry ?? [],
+					cursorTimeMs,
+					this.config.cursorIdleHideDelayMs ?? 2000,
+				)
+				: 1;
+			applyExportCursorIdleAnimation(this.cursorOverlay, idleAlpha, layoutCache.maskRect);
 		}
 
 		const smoothedCursor = mapSmoothedCursorToCanvasNormalized(
