@@ -151,6 +151,7 @@ interface VideoExporterConfig extends ExportConfig {
 	sourceAudioTrackSettings?: SourceAudioTrackSettings;
 	previewWidth?: number;
 	previewHeight?: number;
+	watermark?: import("@/components/video-editor/types").WatermarkSettings | null;
 	onProgress?: (progress: ExportProgress) => void;
 	preferredEncoderPath?: SupportedMp4EncoderPath | null;
 }
@@ -642,6 +643,7 @@ export class ModernVideoExporter {
 					zoomSmoothness: this.config.zoomSmoothness,
 					zoomClassicMode: this.config.zoomClassicMode,
 					frame: this.config.frame,
+					watermark: this.config.watermark,
 				});
 				await this.renderer.initialize();
 				this.rendererInitTimeMs = this.getNowMs() - stageStartedAt;

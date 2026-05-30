@@ -87,6 +87,7 @@ interface GifExporterConfig {
 	frame?: string | null;
 	previewWidth?: number;
 	previewHeight?: number;
+	watermark?: import("@/components/video-editor/types").WatermarkSettings | null;
 	maxDecodeQueue?: number;
 	maxPendingFrames?: number;
 	onProgress?: (progress: ExportProgress) => void;
@@ -217,6 +218,7 @@ export class GifExporter {
 				cursorClickBounceDuration: this.config.cursorClickBounceDuration,
 				cursorSway: this.config.cursorSway,
 				frame: this.config.frame,
+				watermark: this.config.watermark,
 			});
 			await this.renderer.initialize();
 

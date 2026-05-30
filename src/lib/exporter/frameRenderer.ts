@@ -74,6 +74,7 @@ import {
 import { isVideoWallpaperSource } from "@/lib/wallpapers";
 import { renderAnnotations } from "./annotationRenderer";
 import { renderCaptions } from "./captionRenderer";
+import { renderWatermark } from "./watermarkRenderer";
 import { ForwardFrameSource } from "./forwardFrameSource";
 import { resolveMediaElementSource } from "./localMediaSource";
 import { buildTemporalSamplePlanUs, getTemporalMotionBlurConfig } from "./temporalMotionBlur";
@@ -136,6 +137,7 @@ interface FrameRenderConfig {
 	cursorClickBounceDuration?: number;
 	cursorSway?: number;
 	frame?: string | null;
+	watermark?: import("@/components/video-editor/types").WatermarkSettings | null;
 }
 
 interface AnimationState {
@@ -1661,6 +1663,10 @@ export class FrameRenderer {
 				executeExtensionRenderHooks("post-webcam", this.compositeCtx, hookParams);
 				executeExtensionRenderHooks("post-annotations", this.compositeCtx, hookParams);
 				executeExtensionRenderHooks("final", this.compositeCtx, hookParams);
+
+				if (this.config.watermark?.enabled) {
+					void renderWatermark(this.compositeCtx, this.config.watermark, temporalSnapshot.timeMs, this.config.width, this.config.height);
+				}
 			}
 
 			return;
@@ -1868,6 +1874,10 @@ export class FrameRenderer {
 			executeExtensionRenderHooks("post-annotations", this.compositeCtx, hookParams);
 
 			executeExtensionRenderHooks("final", this.compositeCtx, hookParams);
+
+			if (this.config.watermark?.enabled) {
+				void renderWatermark(this.compositeCtx, this.config.watermark, timeMs, this.config.width, this.config.height);
+			}
 		}
 	}
 

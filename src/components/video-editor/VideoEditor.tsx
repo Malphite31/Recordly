@@ -120,6 +120,7 @@ import { extensionHost } from "@/lib/extensions";
 import { useVideoEditorAudio } from "./audio/useVideoEditorAudio";
 import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
 import { CropControl } from "./CropControl";
+import { WatermarkSidebar } from "./WatermarkSidebar";
 import { ExportSettingsMenu } from "./ExportSettingsMenu";
 import ExtensionManager from "./ExtensionManager";
 import {
@@ -190,6 +191,7 @@ import {
 	DEFAULT_CURSOR_STYLE,
 	DEFAULT_FIGURE_DATA,
 	DEFAULT_WEBCAM_OVERLAY,
+	DEFAULT_WATERMARK_SETTINGS,
 	DEFAULT_WEBCAM_TIME_OFFSET_MS,
 	DEFAULT_ZOOM_IN_DURATION_MS,
 	DEFAULT_ZOOM_IN_EASING,
@@ -209,6 +211,7 @@ import {
 	type TrimRegion,
 	trimsToClips,
 	type WebcamOverlaySettings,
+	type WatermarkSettings,
 	type ZoomDepth,
 	type ZoomFocus,
 	type ZoomMode,
@@ -488,6 +491,7 @@ export default function VideoEditor() {
 	const [webcam, setWebcam] = useState<WebcamOverlaySettings>(
 		initialEditorPreferences.webcam ?? DEFAULT_WEBCAM_OVERLAY,
 	);
+	const [watermark, setWatermark] = useState<WatermarkSettings>(DEFAULT_WATERMARK_SETTINGS);
 	const [resolvedWebcamVideoUrl, setResolvedWebcamVideoUrl] = useState<string | null>(null);
 	const [zoomRegions, setZoomRegions] = useState<ZoomRegion[]>([]);
 	const [cursorTelemetry, setCursorTelemetry] = useState<CursorTelemetryPoint[]>([]);
@@ -1161,6 +1165,7 @@ export default function VideoEditor() {
 					cursorClickBounce,
 					cursorClickBounceDuration,
 					cursorSway,
+					watermark,
 				});
 				await frameRenderer.initialize();
 				await frameRenderer.renderFrame(videoFrame, frameTimestampUs);
@@ -1565,6 +1570,11 @@ export default function VideoEditor() {
 				icon: PhCamera,
 			},
 			{
+				id: "watermark" as const,
+				label: t("settings.sections.watermark", "Watermark"),
+				icon: PhSparkle,
+			},
+			{
 				id: "captions" as const,
 				label: t("settings.sections.captions", "Captions"),
 				icon: PhCaptions,
@@ -1632,6 +1642,7 @@ export default function VideoEditor() {
 				frame: string | null;
 				cropRegion: CropRegion;
 				webcam: WebcamOverlaySettings;
+				watermark: WatermarkSettings;
 				zoomRegions: ZoomRegion[];
 				trimRegions: TrimRegion[];
 				clipRegions: ClipRegion[];
@@ -1735,6 +1746,7 @@ export default function VideoEditor() {
 				frame,
 				cropRegion,
 				webcam,
+				watermark,
 				zoomRegions,
 				trimRegions,
 				clipRegions,
@@ -1796,6 +1808,7 @@ export default function VideoEditor() {
 			padding,
 			cropRegion,
 			webcam,
+			watermark,
 			zoomRegions,
 			trimRegions,
 			clipRegions,
@@ -1981,6 +1994,9 @@ export default function VideoEditor() {
 			setFrame(normalizedEditor.frame);
 			setCropRegion(normalizedEditor.cropRegion);
 			setWebcam(normalizedEditor.webcam);
+			if (normalizedEditor.watermark) {
+				setWatermark(normalizedEditor.watermark);
+			}
 			setZoomRegions(normalizedEditor.zoomRegions);
 			setTrimRegions(normalizedEditor.trimRegions);
 			setClipRegions(normalizedEditor.clipRegions);
@@ -4216,6 +4232,7 @@ export default function VideoEditor() {
 						frame,
 						previewWidth,
 						previewHeight,
+						watermark,
 						maxDecodeQueue: smokeExportConfig.maxDecodeQueue,
 						maxPendingFrames: smokeExportConfig.maxPendingFrames,
 						onProgress: (progress: ExportProgress) => {
@@ -4402,6 +4419,7 @@ export default function VideoEditor() {
 						sourceAudioTrackSettings: sourceAudioTrackSettingsForExport,
 						previewWidth,
 						previewHeight,
+						watermark,
 						onProgress: (progress: ExportProgress) => {
 							recordSmokeProgress(progress);
 							setExportProgress(progress);
@@ -5695,6 +5713,8 @@ export default function VideoEditor() {
 						{/* Panel */}
 						{activeEffectSection === "extensions" ? (
 							<ExtensionManager />
+						) : activeEffectSection === "watermark" ? (
+							<WatermarkSidebar settings={watermark} onChange={setWatermark} />
 						) : (
 							<SettingsPanel
 								panelMode="editor"
