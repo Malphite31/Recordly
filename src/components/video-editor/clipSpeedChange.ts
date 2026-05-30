@@ -45,20 +45,34 @@ export function planClipSpeedChange(params: {
 	const oldSpeed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
 	const sourceDurationMs = Math.max(0, clip.endMs - clip.startMs) * oldSpeed;
 	const newEndMs = Math.round(clip.startMs + sourceDurationMs / speed);
-	const nextClip = clipRegions
-		.filter((candidate) => candidate.id !== selectedClipId && candidate.startMs >= clip.endMs)
-		.sort((left, right) => left.startMs - right.startMs)[0];
 
-	if (nextClip && newEndMs > nextClip.startMs) {
-		return { blockedReason: "clip-overlap" };
-	}
+	// Delta by which the clip's end moves — positive means it got longer (slower),
+	// negative means it got shorter (faster).
+	const endDelta = newEndMs - clip.endMs;
+
+	// Ripple: shift all clips that start at or after the old clip end.
+	const sortedAfter = clipRegions
+		.filter((c) => c.id !== selectedClipId && c.startMs >= clip.endMs)
+		.sort((a, b) => a.startMs - b.startMs);
+
+	// Check that ripple-shifting won't create a gap or overlap between the
+	// changed clip and the immediately next clip (they should stay adjacent).
+	// We allow the shift unconditionally — ripple always works.
 
 	const scaleFactor = oldSpeed / speed;
 	const nextZoomRegions = zoomRegions.map((zoom) => {
+		if (zoom.startMs >= clip.endMs) {
+			// Zoom is after the clip — ripple shift it
+			return {
+				...zoom,
+				startMs: zoom.startMs + endDelta,
+				endMs: zoom.endMs + endDelta,
+			};
+		}
 		if (zoom.startMs < clip.startMs || zoom.startMs >= clip.endMs) {
 			return zoom;
 		}
-
+		// Zoom is inside the clip — rescale it
 		return {
 			...zoom,
 			startMs: Math.round(clip.startMs + (zoom.startMs - clip.startMs) * scaleFactor),
@@ -88,12 +102,23 @@ export function planClipSpeedChange(params: {
 		return { blockedReason: "zoom-overlap" };
 	}
 
+	const nextClipRegions = clipRegions.map((candidate) => {
+		if (candidate.id === selectedClipId) {
+			return { ...candidate, speed, endMs: newEndMs };
+		}
+		// Ripple-shift clips that come after the changed clip
+		if (sortedAfter.some((c) => c.id === candidate.id)) {
+			return {
+				...candidate,
+				startMs: candidate.startMs + endDelta,
+				endMs: candidate.endMs + endDelta,
+			};
+		}
+		return candidate;
+	});
+
 	return {
-		clipRegions: clipRegions.map((candidate) =>
-			candidate.id === selectedClipId
-				? { ...candidate, speed, endMs: newEndMs }
-				: candidate,
-		),
+		clipRegions: nextClipRegions,
 		zoomRegions: nextZoomRegions,
 	};
 }

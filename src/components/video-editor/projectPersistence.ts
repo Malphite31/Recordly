@@ -1120,9 +1120,10 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 			if (!raw || typeof raw !== "object") return { ...DEFAULT_WATERMARK_SETTINGS };
 			return {
 				enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_WATERMARK_SETTINGS.enabled,
-				type: raw.type === "text" || raw.type === "image" ? raw.type : DEFAULT_WATERMARK_SETTINGS.type,
+				type: raw.type === "text" || raw.type === "image" || raw.type === "video" ? raw.type : DEFAULT_WATERMARK_SETTINGS.type,
 				text: typeof raw.text === "string" ? raw.text : DEFAULT_WATERMARK_SETTINGS.text,
 				imageDataUrl: typeof raw.imageDataUrl === "string" ? raw.imageDataUrl : null,
+				videoDataUrl: typeof raw.videoDataUrl === "string" ? raw.videoDataUrl : null,
 				position:
 					raw.position === "top-left" || raw.position === "top-center" || raw.position === "top-right" ||
 					raw.position === "center-left" || raw.position === "center" || raw.position === "center-right" ||
@@ -1138,7 +1139,9 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				color: typeof raw.color === "string" && raw.color.trim() ? raw.color : DEFAULT_WATERMARK_SETTINGS.color,
 				fontFamily: typeof raw.fontFamily === "string" && raw.fontFamily.trim() ? raw.fontFamily : DEFAULT_WATERMARK_SETTINGS.fontFamily,
 				animationStyle:
-					raw.animationStyle === "none" || raw.animationStyle === "pulse" || raw.animationStyle === "fade-in-out"
+					raw.animationStyle === "none" || raw.animationStyle === "pulse" || raw.animationStyle === "fade-in-out" ||
+					raw.animationStyle === "fade-in" || raw.animationStyle === "slide-in-left" || raw.animationStyle === "slide-in-right" ||
+					raw.animationStyle === "slide-in-top" || raw.animationStyle === "slide-in-bottom"
 						? raw.animationStyle
 						: DEFAULT_WATERMARK_SETTINGS.animationStyle,
 				padding: isFiniteNumber(raw.padding) ? clamp(raw.padding, 0, 200) : DEFAULT_WATERMARK_SETTINGS.padding,

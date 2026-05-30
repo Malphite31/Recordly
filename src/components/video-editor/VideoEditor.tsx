@@ -19,6 +19,7 @@ import {
 	SkipBack,
 	SkipForward,
 	Sparkle,
+	Stamp,
 	ArrowCounterClockwise as Undo2,
 	UserCircle as User,
 	SpeakerLow as Volume1,
@@ -113,6 +114,9 @@ const PhSparkle = (props: { className?: string; weight?: "fill" | "regular" }) =
 );
 const PhSettings = (props: { className?: string; weight?: "fill" | "regular" }) => (
 	<Gear weight={props.weight ?? "regular"} className={props.className} />
+);
+const PhWatermark = (props: { className?: string; weight?: "fill" | "regular" }) => (
+	<Stamp weight={props.weight ?? "regular"} className={props.className} />
 );
 
 import type { SourceAudioTrackSettings } from "@/components/video-editor/audio/audioTypes";
@@ -1572,7 +1576,7 @@ export default function VideoEditor() {
 			{
 				id: "watermark" as const,
 				label: t("settings.sections.watermark", "Watermark"),
-				icon: PhSparkle,
+				icon: PhWatermark,
 			},
 			{
 				id: "captions" as const,
@@ -3603,12 +3607,18 @@ export default function VideoEditor() {
 				if (!target) return prev;
 				const leftId = `clip-${nextClipIdRef.current++}`;
 				const rightId = `clip-${nextClipIdRef.current++}`;
+				const speed = Number.isFinite(target.speed) && target.speed > 0 ? target.speed : 1;
+				const leftDurationMs = Math.round(splitMs) - target.startMs;
+				const leftSourceDurationMs = leftDurationMs * speed;
+				const targetSourceStartMs = target.sourceStartMs ?? 0;
 				const left: ClipRegion = {
 					id: leftId,
 					startMs: target.startMs,
 					endMs: Math.round(splitMs),
 					speed: target.speed,
 					muted: target.muted,
+					showSourceAudio: target.showSourceAudio,
+					sourceStartMs: targetSourceStartMs,
 				};
 				const right: ClipRegion = {
 					id: rightId,
@@ -3616,6 +3626,8 @@ export default function VideoEditor() {
 					endMs: target.endMs,
 					speed: target.speed,
 					muted: target.muted,
+					showSourceAudio: target.showSourceAudio,
+					sourceStartMs: targetSourceStartMs + leftSourceDurationMs,
 				};
 				if (selectedClipId === target.id) {
 					setSelectedClipId(leftId);
@@ -3709,17 +3721,50 @@ export default function VideoEditor() {
 
 			if ("blockedReason" in plan) {
 				toast.warning(
-					plan.blockedReason === "clip-overlap"
+					plan.blockedReason === "zoom-overlap"
 						? t(
-								"editor.timeline.speedClipOverlap",
-								"Speed change would overlap the next clip. Move or split clips before slowing this section.",
-							)
-						: t(
 								"editor.timeline.speedZoomOverlap",
 								"Speed change would overlap another zoom. Move or delete the overlapping zoom first.",
+							)
+						: t(
+								"editor.timeline.speedClipOverlap",
+								"Speed change would overlap the next clip. Move or split clips before slowing this section.",
 							),
 				);
 				return;
+			}
+
+			// Compute the end delta to ripple annotations and audio regions too
+			const clip = clipRegions.find((c) => c.id === selectedClipId);
+			if (clip) {
+				const oldSpeed = Number.isFinite(clip.speed) && clip.speed > 0 ? clip.speed : 1;
+				const sourceDurationMs = Math.max(0, clip.endMs - clip.startMs) * oldSpeed;
+				const newEndMs = Math.round(clip.startMs + sourceDurationMs / speed);
+				const endDelta = newEndMs - clip.endMs;
+
+				if (endDelta !== 0) {
+					setAnnotationRegions((prev) =>
+						prev.map((r) =>
+							r.startMs >= clip.endMs
+								? { ...r, startMs: r.startMs + endDelta, endMs: r.endMs + endDelta }
+								: r,
+						),
+					);
+					setAudioRegions((prev) =>
+						prev.map((r) =>
+							r.startMs >= clip.endMs
+								? { ...r, startMs: r.startMs + endDelta, endMs: r.endMs + endDelta }
+								: r,
+						),
+					);
+					setSpeedRegions((prev) =>
+						prev.map((r) =>
+							r.startMs >= clip.endMs
+								? { ...r, startMs: r.startMs + endDelta, endMs: r.endMs + endDelta }
+								: r,
+						),
+					);
+				}
 			}
 
 			setClipRegions(plan.clipRegions);
@@ -5714,7 +5759,9 @@ export default function VideoEditor() {
 						{activeEffectSection === "extensions" ? (
 							<ExtensionManager />
 						) : activeEffectSection === "watermark" ? (
-							<WatermarkSidebar settings={watermark} onChange={setWatermark} />
+							<div className="flex-[2] w-[332px] min-w-[280px] max-w-[332px] bg-editor-panel rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
+								<WatermarkSidebar settings={watermark} onChange={setWatermark} />
+							</div>
 						) : (
 							<SettingsPanel
 								panelMode="editor"
@@ -6107,6 +6154,7 @@ export default function VideoEditor() {
 															)
 												}
 												suspendRendering={shouldSuspendPreviewRendering}
+												watermark={watermark}
 											/>
 										</div>
 									</div>

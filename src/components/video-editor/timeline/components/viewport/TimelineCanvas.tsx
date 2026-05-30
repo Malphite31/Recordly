@@ -451,7 +451,7 @@ const TimelineCanvasRows = memo(function TimelineCanvasRows({
 							sourceAudioTrackSettings={settings}
 							onSelectClip={onSelectClip}
 							liveSpan={liveSpanPreviewById?.[item.id]}
-							waveformPeaks={primarySourceAudioTrack?.peaks ?? null}
+							waveformPeaks={showSourceAudioTrack ? null : (primarySourceAudioTrack?.peaks ?? null)}
 						/>
 					);
 				})}

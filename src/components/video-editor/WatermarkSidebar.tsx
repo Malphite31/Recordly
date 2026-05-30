@@ -3,6 +3,7 @@ import {
 	Stamp,
 	TextT as Type,
 	UploadSimple as Upload,
+	Video as VideoIcon,
 } from "@phosphor-icons/react";
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
@@ -29,9 +30,14 @@ interface WatermarkSidebarProps {
 }
 
 const ANIMATION_OPTIONS: Array<{ value: WatermarkAnimationStyle; label: string }> = [
-	{ value: "none", label: "None" },
-	{ value: "pulse", label: "Pulse" },
-	{ value: "fade-in-out", label: "Fade In/Out" },
+	{ value: "none",            label: "None" },
+	{ value: "pulse",           label: "Pulse" },
+	{ value: "fade-in-out",     label: "Fade In/Out" },
+	{ value: "fade-in",         label: "Fade In" },
+	{ value: "slide-in-left",   label: "Slide In Left" },
+	{ value: "slide-in-right",  label: "Slide In Right" },
+	{ value: "slide-in-top",    label: "Slide In Top" },
+	{ value: "slide-in-bottom", label: "Slide In Bottom" },
 ];
 
 const POSITION_GRID: Array<{ preset: Exclude<WatermarkPosition, "custom">; label: string }> = [
@@ -73,6 +79,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export function WatermarkSidebar({ settings, onChange }: WatermarkSidebarProps) {
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const videoInputRef = useRef<HTMLInputElement>(null);
 
 	const update = useCallback(
 		(patch: Partial<WatermarkSettings>) => onChange({ ...settings, ...patch }),
@@ -82,9 +89,9 @@ export function WatermarkSidebar({ settings, onChange }: WatermarkSidebarProps) 
 	const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
 		if (!file) return;
-		const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"];
+		const validTypes = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
 		if (!validTypes.includes(file.type)) {
-			toast.error("Unsupported image format. Use PNG, JPG, GIF, WebP, or SVG.");
+			toast.error("Unsupported format. Accepted: PNG, JPEG, GIF, WebP, SVG");
 			e.target.value = "";
 			return;
 		}
@@ -95,6 +102,30 @@ export function WatermarkSidebar({ settings, onChange }: WatermarkSidebarProps) 
 				update({ imageDataUrl: dataUrl, type: "image" });
 				toast.success("Watermark image uploaded.");
 			}
+		};
+		reader.readAsDataURL(file);
+		e.target.value = "";
+	}, [update]);
+
+	const handleVideoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		const validTypes = ["video/mp4", "video/quicktime"];
+		if (!validTypes.includes(file.type)) {
+			toast.error("Unsupported format. Accepted: MP4, MOV");
+			e.target.value = "";
+			return;
+		}
+		const reader = new FileReader();
+		reader.onload = (ev) => {
+			const dataUrl = ev.target?.result as string;
+			if (dataUrl) {
+				update({ videoDataUrl: dataUrl });
+				toast.success("Watermark video uploaded.");
+			}
+		};
+		reader.onerror = () => {
+			toast.error("Failed to read video file. Please try again.");
 		};
 		reader.readAsDataURL(file);
 		e.target.value = "";
@@ -128,7 +159,7 @@ export function WatermarkSidebar({ settings, onChange }: WatermarkSidebarProps) 
 				{/* ── Type ───────────────────────────────────────────────── */}
 				<SectionLabel>Type</SectionLabel>
 
-				<div className="grid grid-cols-2 gap-2">
+				<div className="grid grid-cols-3 gap-2">
 					<button
 						type="button"
 						onClick={() => update({ type: "text" })}
@@ -154,6 +185,19 @@ export function WatermarkSidebar({ settings, onChange }: WatermarkSidebarProps) 
 					>
 						<ImageIcon className="w-3.5 h-3.5" />
 						Image
+					</button>
+					<button
+						type="button"
+						onClick={() => update({ type: "video" })}
+						className={cn(
+							"flex items-center justify-center gap-2 h-10 rounded-xl border text-[11px] font-medium transition-all",
+							settings.type === "video"
+								? "bg-[#2563EB] border-[#2563EB] text-white"
+								: "bg-foreground/[0.03] border-foreground/10 text-muted-foreground hover:bg-foreground/[0.06]",
+						)}
+					>
+						<VideoIcon className="w-3.5 h-3.5" />
+						Video
 					</button>
 				</div>
 
@@ -203,21 +247,45 @@ export function WatermarkSidebar({ settings, onChange }: WatermarkSidebarProps) 
 							</div>
 						</ControlRow>
 					</>
-				) : (
+				) : settings.type === "image" ? (
 					<>
 						<SectionLabel>Image</SectionLabel>
-						<input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+						<input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" className="hidden" />
 						<Button
 							onClick={() => fileInputRef.current?.click()}
 							variant="outline"
 							className="w-full gap-2 bg-foreground/5 text-foreground border-foreground/10 hover:bg-[#2563EB] hover:text-white hover:border-[#2563EB] transition-all py-6"
 						>
 							<Upload className="w-4 h-4" />
-							Upload Image (PNG, SVG, JPG)
+							Upload Image (PNG, JPEG, GIF, WebP, SVG)
 						</Button>
 						{settings.imageDataUrl && (
 							<div className="rounded-lg border border-foreground/10 overflow-hidden bg-foreground/5 p-2">
 								<img src={settings.imageDataUrl} alt="Watermark preview" className="w-full h-auto max-h-24 object-contain rounded" />
+							</div>
+						)}
+					</>
+				) : (
+					<>
+						<SectionLabel>Video</SectionLabel>
+						<input type="file" ref={videoInputRef} onChange={handleVideoUpload} accept="video/mp4,video/quicktime" className="hidden" />
+						<Button
+							onClick={() => videoInputRef.current?.click()}
+							variant="outline"
+							className="w-full gap-2 bg-foreground/5 text-foreground border-foreground/10 hover:bg-[#2563EB] hover:text-white hover:border-[#2563EB] transition-all py-6"
+						>
+							<Upload className="w-4 h-4" />
+							Upload Video (MP4, MOV)
+						</Button>
+						{settings.videoDataUrl && (
+							<div className="rounded-lg border border-foreground/10 overflow-hidden bg-foreground/5 p-2">
+								{/* biome-ignore lint/a11y/useMediaCaption: thumbnail preview only */}
+								<video
+									src={settings.videoDataUrl}
+									className="w-full h-auto max-h-24 object-contain rounded"
+									muted
+									playsInline
+								/>
 							</div>
 						)}
 					</>

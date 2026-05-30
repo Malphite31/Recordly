@@ -735,7 +735,7 @@ export const DEFAULT_KEYBOARD_OVERLAY_SETTINGS: KeyboardOverlaySettings = {
 
 // ─── Watermark ────────────────────────────────────────────────────────────────
 
-export type WatermarkType = "text" | "image";
+export type WatermarkType = "text" | "image" | "video";
 
 export type WatermarkPosition =
 	| "top-left"
@@ -749,7 +749,15 @@ export type WatermarkPosition =
 	| "bottom-right"
 	| "custom";
 
-export type WatermarkAnimationStyle = "none" | "pulse" | "fade-in-out";
+export type WatermarkAnimationStyle =
+	| "none"
+	| "pulse"
+	| "fade-in-out"
+	| "fade-in"
+	| "slide-in-left"
+	| "slide-in-right"
+	| "slide-in-top"
+	| "slide-in-bottom";
 
 export interface WatermarkSettings {
 	enabled: boolean;
@@ -758,6 +766,8 @@ export interface WatermarkSettings {
 	text: string;
 	/** Image data URL (used when type = "image") */
 	imageDataUrl: string | null;
+	/** Video data URL (used when type = "video") */
+	videoDataUrl: string | null;
 	position: WatermarkPosition;
 	/** Custom X position (0–1) */
 	positionX: number;
@@ -784,6 +794,7 @@ export const DEFAULT_WATERMARK_SETTINGS: WatermarkSettings = {
 	type: "text",
 	text: "© My Brand",
 	imageDataUrl: null,
+	videoDataUrl: null,
 	position: "bottom-right",
 	positionX: 1,
 	positionY: 1,

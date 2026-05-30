@@ -63,6 +63,7 @@ import {
 	type SpringState,
 	stepSpringValue,
 } from "./videoPlayback/motionSmoothing";
+import { renderWatermark } from "@/lib/exporter/watermarkRenderer";
 
 function getContributedCursorStylesSignature() {
 	return extensionHost
@@ -374,6 +375,7 @@ interface VideoPlaybackProps {
 	cursorSway?: number;
 	volume?: number;
 	suspendRendering?: boolean;
+	watermark?: import("./types").WatermarkSettings;
 }
 
 export interface VideoPlaybackRef {
@@ -454,6 +456,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 			cursorSway = DEFAULT_CURSOR_SWAY,
 			volume = 1,
 			suspendRendering = false,
+			watermark,
 		},
 		ref,
 	) => {
@@ -557,6 +560,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		const videoReadyRafRef = useRef<number | null>(null);
 		const cursorOverlayRef = useRef<PixiCursorOverlay | null>(null);
 		const cursorEffectsCanvasRef = useRef<HTMLCanvasElement | null>(null);
+		const watermarkCanvasRef = useRef<HTMLCanvasElement | null>(null);
+		const watermarkRef = useRef(watermark);
 		const cursorTelemetryRef = useRef<CursorTelemetryPoint[]>([]);
 		const showCursorRef = useRef(showCursor);
 		const cursorIdleHideEnabledRef = useRef(cursorIdleHideEnabled);
@@ -970,6 +975,17 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					if (effectsCanvas.width !== w || effectsCanvas.height !== h) {
 						effectsCanvas.width = w;
 						effectsCanvas.height = h;
+					}
+				}
+
+				// Sync watermark canvas resolution with renderer
+				const wmCanvas = watermarkCanvasRef.current;
+				if (wmCanvas) {
+					const w = result.stageSize.width;
+					const h = result.stageSize.height;
+					if (wmCanvas.width !== w || wmCanvas.height !== h) {
+						wmCanvas.width = w;
+						wmCanvas.height = h;
 					}
 				}
 
@@ -1570,6 +1586,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 		useEffect(() => {
 			zoomSmoothnessRef.current = zoomSmoothness;
 		}, [zoomSmoothness]);
+
+		useEffect(() => {
+			watermarkRef.current = watermark;
+		}, [watermark]);
 
 		useEffect(() => {
 			zoomMotionBlurRef.current = zoomMotionBlur;
@@ -2492,6 +2512,19 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 						executeExtensionRenderHooks("final", ctx2d, hookParams);
 					}
 				}
+
+				// Render watermark overlay on its own canvas
+				const wmCanvas = watermarkCanvasRef.current;
+				const wmSettings = watermarkRef.current;
+				if (wmCanvas && wmCanvas.width > 0 && wmCanvas.height > 0) {
+					const wmCtx = wmCanvas.getContext("2d");
+					if (wmCtx) {
+						wmCtx.clearRect(0, 0, wmCanvas.width, wmCanvas.height);
+						if (wmSettings?.enabled) {
+							void renderWatermark(wmCtx, wmSettings, timeMs, wmCanvas.width, wmCanvas.height);
+						}
+					}
+				}
 			};
 
 			app.ticker.add(ticker);
@@ -2827,6 +2860,12 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 					ref={cursorEffectsCanvasRef}
 					className="absolute inset-0 w-full h-full pointer-events-none"
 					style={{ zIndex: 1 }}
+				/>
+				{/* Canvas overlay for watermark rendering */}
+				<canvas
+					ref={watermarkCanvasRef}
+					className="absolute inset-0 w-full h-full pointer-events-none"
+					style={{ zIndex: 2 }}
 				/>
 				{/* Only render overlay after PIXI and video are fully initialized */}
 				{pixiReady && videoReady && (
